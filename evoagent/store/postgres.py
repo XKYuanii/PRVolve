@@ -10,7 +10,7 @@ from typing import Any, Dict, Optional
 
 from ..core.models import TaskState
 from ..session.events import Event, EventKind
-from ..session.projections import stage_state, trace
+from ..session.projections import REPORT_STAGE, stage_state, trace
 from ..store.sqlite import utc_now
 
 
@@ -656,13 +656,17 @@ class PostgresTaskStore:
                  TaskState.SUCCESS.value, TaskState.FAILED.value,
                  TaskState.CANCELLED.value),
             )
+        elif kind == EventKind.STAGE_COMPLETED and payload.get("stage") == REPORT_STAGE:
+            conn.execute(
+                "UPDATE tasks SET report_json=%s::jsonb,updated_at=%s WHERE id=%s",
+                (json.dumps((payload.get("output") or {}).get("report") or {},
+                            ensure_ascii=False), now, task_id),
+            )
         elif kind == EventKind.TASK_SUCCEEDED:
             conn.execute(
-                "UPDATE tasks SET state=%s,report_json=%s::jsonb,error=NULL,"
+                "UPDATE tasks SET state=%s,error=NULL,"
                 "cancel_requested=FALSE,updated_at=%s WHERE id=%s",
-                (TaskState.SUCCESS.value,
-                 json.dumps(payload.get("report") or {}, ensure_ascii=False),
-                 now, task_id),
+                (TaskState.SUCCESS.value, now, task_id),
             )
             conn.execute(
                 "UPDATE failure_cases SET resolved=TRUE WHERE task_id=%s "

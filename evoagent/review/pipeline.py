@@ -17,13 +17,10 @@ from ..core.diff_parser import ParsedDiff, parse_unified_diff
 from ..core.models import ChangedLine, Finding, ReviewReport, Severity, TaskState
 from ..errors import TaskCancelled
 from ..session.events import EventKind, EventLog
-from .context import ReviewOutcome, ReviewSession
+from .context import (
+    FINALIZE, PARSE, REVIEW, ReviewOutcome, ReviewSession, outcome_to_stage,
+)
 from .stages import StageRunner
-
-
-PARSE = "parse"
-REVIEW = "review"
-FINALIZE = "finalize"
 
 
 class ReviewPipeline:
@@ -73,12 +70,10 @@ class ReviewPipeline:
                 FINALIZE, lambda: self._finalize(session, reviewed),
                 "Validating and ranking %d finding(s)" % len(reviewed["findings"]),
             )
-            report = report_from_dict(finalized["report"])
-            log.append(
-                EventKind.TASK_SUCCEEDED, message="Review completed",
-                report=finalized["report"],
-            )
-            return report
+            # The report lives in the finalize stage output and nowhere else;
+            # the terminal event only marks the run done.
+            log.append(EventKind.TASK_SUCCEEDED, message="Review completed")
+            return report_from_dict(finalized["report"])
         except TaskCancelled as exc:
             log.append(EventKind.TASK_CANCELLED, message=str(exc))
             raise
@@ -116,10 +111,7 @@ class ReviewPipeline:
             staged(session) if staged
             else ReviewOutcome(self.reviewer.review(session.diff, session.parsed))
         )
-        return {
-            "findings": [item.to_dict() for item in outcome.findings],
-            "summary": outcome.summary,
-        }
+        return outcome_to_stage(outcome)
 
     def _finalize(self, session: ReviewSession, reviewed: Dict[str, Any]) -> Dict[str, Any]:
         findings = [finding_from_dict(item) for item in reviewed["findings"]]

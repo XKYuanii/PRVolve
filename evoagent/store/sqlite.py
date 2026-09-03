@@ -7,7 +7,7 @@ from typing import Any, Dict, Optional
 
 from ..core.models import TaskState
 from ..session.events import Event, EventKind
-from ..session.projections import stage_state, trace
+from ..session.projections import REPORT_STAGE, stage_state, trace
 
 
 def utc_now() -> str:
@@ -846,12 +846,19 @@ class TaskStore:
                 (state, now, task_id, TaskState.SUCCESS.value,
                  TaskState.FAILED.value, TaskState.CANCELLED.value),
             )
+        elif kind == EventKind.STAGE_COMPLETED and payload.get("stage") == REPORT_STAGE:
+            # The report is stored once, by the stage that builds it; the read
+            # model copies it here so list views do not fold the log.
+            conn.execute(
+                "UPDATE tasks SET report_json=?,updated_at=? WHERE id=?",
+                (json.dumps((payload.get("output") or {}).get("report") or {},
+                            ensure_ascii=False), now, task_id),
+            )
         elif kind == EventKind.TASK_SUCCEEDED:
             conn.execute(
-                "UPDATE tasks SET state=?,report_json=?,error=NULL,cancel_requested=0,"
+                "UPDATE tasks SET state=?,error=NULL,cancel_requested=0,"
                 "updated_at=? WHERE id=?",
-                (TaskState.SUCCESS.value,
-                 json.dumps(payload.get("report") or {}, ensure_ascii=False), now, task_id),
+                (TaskState.SUCCESS.value, now, task_id),
             )
             conn.execute(
                 "UPDATE failure_cases SET resolved = 1 WHERE task_id = ? "

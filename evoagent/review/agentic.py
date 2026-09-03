@@ -28,7 +28,9 @@ from ..session.events import EventLog
 from ..session.ledger import ExecutionLedger
 from ..tools.registry import AgentTool
 from ..tools.repository import RepositoryToolSuite
-from .context import ReviewOutcome, ReviewSession
+from .context import (
+    REVIEW, ReviewOutcome, ReviewSession, outcome_from_stage, outcome_to_stage,
+)
 from .merge import (
     apply_critic, apply_lead_final, attach_diff_ast_evidence, candidates_from,
     merge_findings, normalize_delegations, normalize_revision_requests,
@@ -131,9 +133,14 @@ class AgenticReviewer(Reviewer):
         the pipeline; they get the same log, stages and resume behaviour, and the
         summary comes back with the findings instead of via a second lookup.
         """
-        return self.review_session(self.open_session(
-            task_id, diff, parsed, repository, tenant_id
-        ))
+        session = self.open_session(task_id, diff, parsed, repository, tenant_id)
+        # Wrap the run in the same `review` stage the pipeline would open, so
+        # both entry points produce one identically shaped log.
+        stored = session.runner.run(
+            REVIEW, lambda: outcome_to_stage(self.review_session(session)),
+            "Reviewing %d changed files" % len(parsed.files),
+        )
+        return outcome_from_stage(stored)
 
     def review_with_context(
         self, task_id: str, diff: str, parsed: ParsedDiff,
@@ -157,8 +164,8 @@ class AgenticReviewer(Reviewer):
         """Project the run summary out of the log; never a cached side table."""
         if not task_id:
             return {}
-        runner = StageRunner(EventLog.load(self.store, task_id))
-        return dict((runner.output("review.summary") or {}).get("summary") or {})
+        stored = StageRunner(EventLog.load(self.store, task_id)).output(REVIEW)
+        return dict((stored or {}).get("summary") or {})
 
     # -- the protocol ------------------------------------------------------
 
@@ -228,12 +235,6 @@ class AgenticReviewer(Reviewer):
             },
             "context_management": context_management,
         }
-        # Recorded as its own stage so a resumed run reads the summary back
-        # instead of rebuilding it, and so nothing has to cache it in memory.
-        session.runner.run(
-            session.stage("summary"), lambda: {"summary": summary},
-            "Recording review summary",
-        )
         return ReviewOutcome(gated.accepted, summary)
 
     def _recall(self, session: ReviewSession, ledger: ExecutionLedger) -> Dict[str, Any]:

@@ -12,11 +12,22 @@ from ..core.models import TaskState, TraceEvent
 from .events import EventKind, EventLog
 
 
+#: The pipeline stage names. They live here because this module is where the
+#: fine-grained stage vocabulary is translated for everything that reads it -
+#: the public task lifecycle, the trace, and the task read model.
+PARSE = "parse"
+REVIEW = "review"
+FINALIZE = "finalize"
+
+#: The stage whose output carries the published report. Storing it once, in the
+#: stage that builds it, is why no terminal event repeats it.
+REPORT_STAGE = FINALIZE
+
 #: Root stage name -> the public lifecycle state it reports as.
 STAGE_STATES = (
-    ("parse", TaskState.PLANNING),
-    ("review", TaskState.EXECUTING),
-    ("finalize", TaskState.REVIEWING),
+    (PARSE, TaskState.PLANNING),
+    (REVIEW, TaskState.EXECUTING),
+    (FINALIZE, TaskState.REVIEWING),
 )
 
 #: Terminal event kind -> the public lifecycle state it reports as.
@@ -106,6 +117,6 @@ def trace(log: EventLog) -> List[TraceEvent]:
 
 
 def report(log: EventLog) -> Optional[Dict[str, Any]]:
-    """The published report, if the run reached a successful end."""
-    event = log.last(EventKind.TASK_SUCCEEDED)
-    return dict(event.payload.get("report") or {}) if event else None
+    """The published report, stored once by the stage that built it."""
+    stored = stage_output(log, REPORT_STAGE) or {}
+    return dict(stored["report"]) if "report" in stored else None

@@ -64,7 +64,10 @@ class SessionLogTests(unittest.TestCase):
         log.append(EventKind.STAGE_STARTED, stage="review.scan", message="scanning")
         log.append(EventKind.STAGE_COMPLETED, stage="review.scan", output={})
         log.append(EventKind.STAGE_STARTED, stage="finalize", message="ranking")
-        log.append(EventKind.TASK_SUCCEEDED, message="Review completed", report={"risk": "low"})
+        log.append(
+            EventKind.STAGE_COMPLETED, stage="finalize", output={"report": {"risk": "low"}}
+        )
+        log.append(EventKind.TASK_SUCCEEDED, message="Review completed")
 
         reloaded = EventLog.load(self.store, "task")
         self.assertEqual(TaskState.SUCCESS, task_state(reloaded))
@@ -72,7 +75,11 @@ class SessionLogTests(unittest.TestCase):
             ["PLANNING", "EXECUTING", "REVIEWING", "SUCCESS"],
             [item.state.value for item in trace(reloaded)],
         )
+        # The report is stored once, by the stage that built it.
         self.assertEqual({"risk": "low"}, report(reloaded))
+        self.assertEqual(
+            {"risk": "low"}, self.store.get("task")["report"],
+        )
         self.assertEqual("completed", progress(reloaded)["review.scan"]["status"])
         # The read model the API lists tasks from agrees with the projection.
         self.assertEqual("SUCCESS", self.store.get("task")["state"])
