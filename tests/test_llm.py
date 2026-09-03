@@ -3,8 +3,8 @@ import unittest
 import urllib.error
 from unittest import mock
 
-from evoagent.llm import JsonChatClient
-from evoagent.telemetry import ExecutionLedger
+from evoagent.llm.client import JsonChatClient
+from evoagent.session.ledger import ExecutionLedger
 
 
 class FakeResponse:
@@ -25,7 +25,7 @@ class FakeResponse:
 
 
 class JsonChatClientTests(unittest.TestCase):
-    @mock.patch("evoagent.llm.urllib.request.urlopen")
+    @mock.patch("evoagent.llm.client.urllib.request.urlopen")
     def test_invalid_structured_output_is_retried_and_accounted(self, urlopen):
         urlopen.side_effect = [FakeResponse('{"action":"final" "findings":[]}'), FakeResponse(
             '{"action":"final","findings":[]}'
@@ -45,7 +45,7 @@ class JsonChatClientTests(unittest.TestCase):
         self.assertIn("JSON syntax repair engine", retry_payload["messages"][0]["content"])
         self.assertIn("malformed JSON object", retry_payload["messages"][-1]["content"])
 
-    @mock.patch("evoagent.llm.urllib.request.urlopen")
+    @mock.patch("evoagent.llm.client.urllib.request.urlopen")
     def test_json_markdown_fence_is_removed_locally(self, urlopen):
         urlopen.return_value = FakeResponse('```json\n{"action":"final"}\n```')
         client = JsonChatClient("https://example.test", "secret", "model")
@@ -53,7 +53,7 @@ class JsonChatClientTests(unittest.TestCase):
         self.assertEqual("final", client.complete_json("lead", "system", "task")["action"])
         self.assertEqual(1, urlopen.call_count)
 
-    @mock.patch("evoagent.llm.urllib.request.urlopen")
+    @mock.patch("evoagent.llm.client.urllib.request.urlopen")
     def test_concatenated_json_objects_keep_first_action_and_are_audited(self, urlopen):
         urlopen.return_value = FakeResponse(
             '{"action":"final","findings":[]} {"duplicate":true}'
@@ -69,7 +69,7 @@ class JsonChatClientTests(unittest.TestCase):
         self.assertEqual("structured_json_extra_values_ignored", events[0]["event"])
         self.assertEqual(1, events[0]["trailing_values"])
 
-    @mock.patch("evoagent.llm.urllib.request.urlopen")
+    @mock.patch("evoagent.llm.client.urllib.request.urlopen")
     def test_json_with_trailing_prose_is_still_retried(self, urlopen):
         urlopen.side_effect = [
             FakeResponse('{"action":"final"} explanation'),
@@ -80,8 +80,8 @@ class JsonChatClientTests(unittest.TestCase):
         self.assertEqual("final", client.complete_json("lead", "system", "task")["action"])
         self.assertEqual(2, urlopen.call_count)
 
-    @mock.patch("evoagent.llm.time.sleep")
-    @mock.patch("evoagent.llm.urllib.request.urlopen")
+    @mock.patch("evoagent.llm.client.time.sleep")
+    @mock.patch("evoagent.llm.client.urllib.request.urlopen")
     def test_transient_transport_failure_is_retried_and_accounted(
         self, urlopen, sleep,
     ):

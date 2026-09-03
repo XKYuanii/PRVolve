@@ -9,13 +9,13 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if ROOT not in sys.path:
     sys.path.insert(0, ROOT)
 
-from evoagent.evaluation_benchmark import ContextRuleReviewer  # noqa: E402
-from evoagent.evaluation_harness import (  # noqa: E402
+from evoagent.eval.benchmark import ContextRuleReviewer  # noqa: E402
+from evoagent.eval.harness import (  # noqa: E402
     EndToEndEvaluationHarness,
     dataset_fingerprint,
     load_jsonl,
 )
-from evoagent.reviewer import CompositeReviewer, LocalRuleReviewer, Reviewer  # noqa: E402
+from evoagent.review.reviewers import CompositeReviewer, LocalRuleReviewer, Reviewer  # noqa: E402
 
 
 LEGACY_LOCAL_RULE_IDS = frozenset({

@@ -11,8 +11,8 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if ROOT not in sys.path:
     sys.path.insert(0, ROOT)
 
-from evoagent.diff_parser import parse_unified_diff  # noqa: E402
-from evoagent.evaluation_harness import load_jsonl  # noqa: E402
+from evoagent.core.diff_parser import parse_unified_diff  # noqa: E402
+from evoagent.eval.harness import load_jsonl  # noqa: E402
 
 
 SECURITY_PAIRS = os.path.join(ROOT, "benchmarks", "python_security_pairs_v1.jsonl")

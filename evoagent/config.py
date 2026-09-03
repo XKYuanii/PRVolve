@@ -69,7 +69,6 @@ class Settings:
     port: int
     db_path: str
     max_diff_bytes: int
-    max_steps: int
     timeout_seconds: int
     llm_base_url: str
     llm_api_key: str
@@ -232,7 +231,6 @@ class Settings:
             port=_int("EVOAGENT_PORT", 8080),
             db_path=os.getenv("EVOAGENT_DB_PATH", "evoagent.db"),
             max_diff_bytes=_int("EVOAGENT_MAX_DIFF_BYTES", 1024 * 1024),
-            max_steps=_int("EVOAGENT_MAX_STEPS", 8),
             timeout_seconds=_int("EVOAGENT_TIMEOUT_SECONDS", 120),
             llm_base_url=os.getenv("EVOAGENT_LLM_BASE_URL", "").rstrip("/"),
             llm_api_key=os.getenv("EVOAGENT_LLM_API_KEY", ""),

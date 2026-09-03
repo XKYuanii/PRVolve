@@ -13,16 +13,16 @@ if ROOT not in sys.path:
     sys.path.insert(0, ROOT)
 
 from evoagent.config import Settings  # noqa: E402
-from evoagent.evaluation_harness import (  # noqa: E402
+from evoagent.eval.harness import (  # noqa: E402
     dataset_fingerprint,
     load_jsonl,
 )
-from evoagent.evaluation_v2 import (  # noqa: E402
+from evoagent.eval.agentic import (  # noqa: E402
     ProductArmReviewer,
     ProductionEvaluationHarness,
     validate_real_dataset,
 )
-from evoagent.llm import JsonChatClient  # noqa: E402
+from evoagent.llm.client import JsonChatClient  # noqa: E402
 
 
 def select_cases(cases: list, limit: int) -> list:

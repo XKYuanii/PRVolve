@@ -3,15 +3,15 @@ import os
 import tempfile
 import unittest
 
-from evoagent.agentic_core import ModeRouterReviewer
+from evoagent.review.agentic import AgenticReviewer
 from evoagent.config import Settings
-from evoagent.diff_parser import parse_unified_diff
-from evoagent.evaluation_v2 import validate_real_dataset
-from evoagent.evolution_v2 import RootCauseEvolutionGenerator
-from evoagent.patching import apply_file_patch, parse_unified_patch
-from evoagent.service import ReviewService
-from evoagent.store import TaskStore
-from evoagent.verifier import RepairVerifier
+from evoagent.core.diff_parser import parse_unified_diff
+from evoagent.eval.agentic import validate_real_dataset
+from evoagent.evolution.candidates import RootCauseEvolutionGenerator
+from evoagent.review.patching import apply_file_patch, parse_unified_patch
+from evoagent.serving.service import ReviewService
+from evoagent.store.sqlite import TaskStore
+from evoagent.eval.verifier import RepairVerifier
 
 
 DIFF = "--- a/app.py\n+++ b/app.py\n@@ -1 +1 @@\n-old\n+eval(user_input)\n"
@@ -103,7 +103,7 @@ class PhaseImplementationTests(unittest.TestCase):
     def settings(self):
         return Settings(
             host="127.0.0.1", port=8080, db_path=self.path, max_diff_bytes=10000,
-            max_steps=8, timeout_seconds=10, llm_base_url="", llm_api_key="",
+            timeout_seconds=10, llm_base_url="", llm_api_key="",
             llm_model="", github_webhook_secret="", github_token="",
             auto_post_review=False,
         )
@@ -122,7 +122,7 @@ class PhaseImplementationTests(unittest.TestCase):
             "mode": "agentic",
             "enabled_agents": ["lead", "security", "correctness-reliability", "critic"],
         })
-        reviewer = ModeRouterReviewer(store, FakeChatClient())
+        reviewer = AgenticReviewer(store, FakeChatClient())
         parsed = parse_unified_diff(DIFF)
         findings = reviewer.review_with_context("task", DIFF, parsed, "org/repo")
         summary = reviewer.collaboration_summary("task")

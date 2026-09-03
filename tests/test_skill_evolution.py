@@ -4,15 +4,15 @@ import tempfile
 import unittest
 
 from evoagent.config import Settings
-from evoagent.diff_parser import parse_unified_diff
-from evoagent.service import ReviewService
-from evoagent.skill_evolution import (
+from evoagent.core.diff_parser import parse_unified_diff
+from evoagent.serving.service import ReviewService
+from evoagent.evolution.skills import (
     AgentSkillReplayReviewer,
     SkillEvolutionEngine,
     validate_artifact,
 )
-from evoagent.skills import AgentSkill, SkillRegistry
-from evoagent.store import TaskStore
+from evoagent.tools.skills import AgentSkill, SkillRegistry
+from evoagent.store.sqlite import TaskStore
 
 
 RISK_DIFF = "--- a/a.py\n+++ b/a.py\n@@ -1 +1 @@\n-old\n+dangerous_call(data)\n"
@@ -168,8 +168,10 @@ class SkillEvolutionTests(unittest.TestCase):
         reviewer = AgentSkillReplayReviewer(artifact(), self.client)
         findings = reviewer.review(RISK_DIFF, parse_unified_diff(RISK_DIFF))
         self.assertEqual(["SEC-DANGEROUS-CALL"], [item.rule_id for item in findings])
-        summary = reviewer.router.collaboration_summary("skill-replay:review-dangerous-calls:1")
-        self.assertEqual(["review-dangerous-calls"], summary["collaboration"]["agent_skills"])
+        self.assertEqual(
+            ["review-dangerous-calls"],
+            reviewer.last_summary["collaboration"]["agent_skills"],
+        )
 
     def test_candidate_skill_md_replay_activates_and_persists(self):
         self.seed_cases()
@@ -204,7 +206,7 @@ class SkillEvolutionTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as skills_dir:
             settings = Settings(
                 host="127.0.0.1", port=8080, db_path=self.path,
-                max_diff_bytes=10000, max_steps=8, timeout_seconds=10,
+                max_diff_bytes=10000, timeout_seconds=10,
                 llm_base_url="", llm_api_key="", llm_model="",
                 github_webhook_secret="", github_token="", auto_post_review=False,
                 skills_dir=skills_dir, eval_min_holdout_cases=0,

@@ -3,11 +3,11 @@ import os
 import tempfile
 import unittest
 
-from evoagent.agentic_core import ModeRouterReviewer
-from evoagent.context_manager import ContextManager, estimate_tokens
-from evoagent.diff_parser import parse_unified_diff
-from evoagent.memory import MemoryManager
-from evoagent.store import TaskStore
+from evoagent.review.agentic import AgenticReviewer
+from evoagent.llm.context import ContextManager, estimate_tokens
+from evoagent.core.diff_parser import parse_unified_diff
+from evoagent.agents.memory import MemoryManager
+from evoagent.store.sqlite import TaskStore
 
 
 def large_diff():
@@ -185,7 +185,7 @@ class ContextMemoryIntegrationTests(unittest.TestCase):
             context_window_tokens=6000, input_token_budget=4000,
             diff_token_budget=1200,
         )
-        reviewer = ModeRouterReviewer(
+        reviewer = AgenticReviewer(
             self.store, client, memory_manager=memory, context_manager=manager,
         )
 

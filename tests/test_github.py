@@ -2,7 +2,7 @@ import hashlib
 import hmac
 import unittest
 
-from evoagent.github import verify_signature
+from evoagent.serving.github import verify_signature
 
 
 class GitHubSignatureTests(unittest.TestCase):

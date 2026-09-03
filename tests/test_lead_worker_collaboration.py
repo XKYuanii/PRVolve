@@ -3,10 +3,12 @@ import os
 import tempfile
 import unittest
 
-from evoagent.agentic_core import ModeRouterReviewer
-from evoagent.diff_parser import parse_unified_diff
-from evoagent.memory import MemoryManager
-from evoagent.store import TaskStore
+from evoagent.review.agentic import AgenticReviewer
+from evoagent.core.diff_parser import parse_unified_diff
+from evoagent.agents.memory import MemoryManager
+from evoagent.session.events import EventLog
+from evoagent.session.projections import progress
+from evoagent.store.sqlite import TaskStore
 
 
 DIFF = "--- a/app.py\n+++ b/app.py\n@@ -1 +1 @@\n-old\n+eval(user_input)\n"
@@ -113,7 +115,7 @@ class LeadWorkerCollaborationTests(unittest.TestCase):
 
     def test_lead_delegates_requests_revision_and_synthesizes(self):
         client = HierarchicalClient()
-        reviewer = ModeRouterReviewer(self.store, client)
+        reviewer = AgenticReviewer(self.store, client)
 
         findings = reviewer.review_with_context(
             "task", DIFF, parse_unified_diff(DIFF), "org/repo"
@@ -138,17 +140,19 @@ class LeadWorkerCollaborationTests(unittest.TestCase):
             "assignment_created", "worker_reported", "revision_completed",
             "lead_activated", "lead_completed",
         }.issubset(session_events))
-        checkpoint = self.store.load_checkpoints("task")["agentic-lead-session"]
-        self.assertEqual("completed", checkpoint["status"])
-        self.assertEqual("completed", checkpoint["state"]["session"]["phase"])
+        stages = progress(EventLog.load(self.store, "task"))
+        self.assertEqual("completed", stages["review.scan"]["status"])
+        self.assertEqual("completed", stages["review.delegate"]["status"])
+        self.assertEqual("completed", stages["review.work:security-1"]["status"])
+        self.assertEqual("completed", stages["review.arbitrate"]["status"])
 
     def test_completed_session_resumes_without_repeating_agent_calls(self):
         first = HierarchicalClient()
-        ModeRouterReviewer(self.store, first).review_with_context(
+        AgenticReviewer(self.store, first).review_with_context(
             "task", DIFF, parse_unified_diff(DIFF), "org/repo"
         )
         resumed_client = HierarchicalClient()
-        resumed = ModeRouterReviewer(self.store, resumed_client)
+        resumed = AgenticReviewer(self.store, resumed_client)
 
         findings = resumed.review_with_context(
             "task", DIFF, parse_unified_diff(DIFF), "org/repo"
@@ -165,9 +169,46 @@ class LeadWorkerCollaborationTests(unittest.TestCase):
             resumed.collaboration_summary("task")["execution"]["llm_calls"], 0
         )
 
+    def test_worker_killed_mid_run_resumes_without_repeating_finished_workers(self):
+        class KillingClient(HierarchicalClient):
+            def complete_json(self, role, system, user, ledger=None, max_tokens=None):
+                task = json.loads(json.loads(user)["task"])
+                assignment = task.get("lead_assignment")
+                if isinstance(assignment, dict) and assignment["worker"] == (
+                    "correctness-reliability"
+                ):
+                    # BaseException models the process dying rather than the
+                    # worker reporting a failure, which is caught by design.
+                    raise KeyboardInterrupt("worker process killed")
+                return super().complete_json(role, system, user, ledger, max_tokens)
+
+        killed = KillingClient()
+        with self.assertRaises(KeyboardInterrupt):
+            AgenticReviewer(self.store, killed).review_with_context(
+                "task", DIFF, parse_unified_diff(DIFF), "org/repo"
+            )
+        stages = progress(EventLog.load(self.store, "task"))
+        self.assertEqual("completed", stages["review.work:security-1"]["status"])
+        self.assertEqual("running", stages["review.work:reliability-1"]["status"])
+
+        resumed_client = HierarchicalClient()
+        AgenticReviewer(self.store, resumed_client).review_with_context(
+            "task", DIFF, parse_unified_diff(DIFF), "org/repo"
+        )
+
+        # The scan, the delegation and the finished security worker are read
+        # back from the log; only the worker that died is started again. The
+        # second security call is the Lead's revision request, a new stage.
+        stages = progress(EventLog.load(self.store, "task"))
+        self.assertNotIn(("lead", "delegate"), resumed_client.calls)
+        self.assertEqual(1, stages["review.scan"]["attempt"])
+        self.assertEqual(1, stages["review.delegate"]["attempt"])
+        self.assertEqual(1, stages["review.work:security-1"]["attempt"])
+        self.assertEqual(2, stages["review.work:reliability-1"]["attempt"])
+
     def test_gate_decisions_are_archived_for_future_agent_recall(self):
         memory = MemoryManager(self.store)
-        reviewer = ModeRouterReviewer(self.store, HierarchicalClient(), memory_manager=memory)
+        reviewer = AgenticReviewer(self.store, HierarchicalClient(), memory_manager=memory)
 
         reviewer.review_with_context("task", DIFF, parse_unified_diff(DIFF), "org/repo")
 

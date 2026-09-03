@@ -7,7 +7,7 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if ROOT not in sys.path:
     sys.path.insert(0, ROOT)
 
-from evoagent.evolution_proof import (  # noqa: E402
+from evoagent.evolution.proof import (  # noqa: E402
     generate_prompt_evolution_cases,
     run_prompt_evolution_proof,
     write_jsonl,

@@ -1,27 +1,27 @@
 import json
 import unittest
 
-from evoagent.diff_parser import parse_unified_diff
-from evoagent.agentic_core import (
-    BoundedRole,
-    ModeRouterReviewer,
-    _normalize_model_rule_id,
-    _parse_findings,
-    _worker_final_validation_error,
+from evoagent.core.diff_parser import parse_unified_diff
+from evoagent.agents.loop import AgentLoop
+from evoagent.agents.parsing import (
+    normalize_model_rule_id, parse_findings, worker_final_validation_error,
 )
-from evoagent.evaluation_benchmark import ContextRuleReviewer
-from evoagent.evaluation_harness import one_to_one_match
-from evoagent.evaluation_v2 import (
+from evoagent.review.agentic import AgenticReviewer
+from evoagent.review.merge import apply_critic, merge_findings, normalize_delegations
+from evoagent.review.preflight import repository_preflight
+from evoagent.eval.benchmark import ContextRuleReviewer
+from evoagent.eval.harness import one_to_one_match
+from evoagent.eval.agentic import (
     FairAblationSuite,
     ProductArmReviewer,
     ProductionEvaluationHarness,
     product_reviewer_factories,
 )
-from evoagent.models import Finding, Severity
-from evoagent.reviewer import LocalRuleReviewer
-from evoagent.repository_tools import RepositoryToolSuite
-from evoagent.runtime import AgentTool, ToolRegistry
-from evoagent.telemetry import ExecutionLedger
+from evoagent.core.models import Finding, Severity
+from evoagent.review.reviewers import LocalRuleReviewer
+from evoagent.tools.repository import RepositoryToolSuite
+from evoagent.tools.registry import AgentTool, ToolRegistry
+from evoagent.session.ledger import ExecutionLedger
 
 
 DIFF = (
@@ -120,7 +120,7 @@ class AgenticEvaluationTests(unittest.TestCase):
         )
         tools = RecordingTools()
 
-        observations = ModeRouterReviewer._repository_preflight(
+        observations = repository_preflight(
             {"files": parsed.files}, parsed, tools,
         )
 
@@ -167,7 +167,7 @@ class AgenticEvaluationTests(unittest.TestCase):
         )
         tools = RecordingTools()
 
-        observations = ModeRouterReviewer._repository_preflight(
+        observations = repository_preflight(
             {"files": parsed.files}, parsed, tools, repository_available=False,
         )
 
@@ -198,7 +198,7 @@ class AgenticEvaluationTests(unittest.TestCase):
         )
         tools = RecordingTools()
 
-        observations = ModeRouterReviewer._repository_preflight(
+        observations = repository_preflight(
             {"files": parsed.files}, parsed, tools, repository_available=False,
         )
 
@@ -228,7 +228,7 @@ class AgenticEvaluationTests(unittest.TestCase):
         )
         tools = RecordingTools()
 
-        observations = ModeRouterReviewer._repository_preflight(
+        observations = repository_preflight(
             {"files": parsed.files}, parsed, tools, repository_available=False,
         )
 
@@ -283,7 +283,7 @@ class AgenticEvaluationTests(unittest.TestCase):
         )
         tools = RecordingTools()
 
-        ModeRouterReviewer._repository_preflight(
+        repository_preflight(
             {"files": parsed.files}, parsed, tools, repository_available=True,
         )
 
@@ -420,10 +420,10 @@ class AgenticEvaluationTests(unittest.TestCase):
         risk_tools = RecordingTools()
         clean_tools = RecordingTools()
 
-        ModeRouterReviewer._repository_preflight(
+        repository_preflight(
             {"files": risk.files}, risk, risk_tools, repository_available=False,
         )
-        ModeRouterReviewer._repository_preflight(
+        repository_preflight(
             {"files": clean.files}, clean, clean_tools, repository_available=False,
         )
 
@@ -454,7 +454,7 @@ class AgenticEvaluationTests(unittest.TestCase):
         )
         tools = RecordingTools()
 
-        ModeRouterReviewer._repository_preflight(
+        repository_preflight(
             {"files": parsed.files}, parsed, tools, repository_available=False,
         )
 
@@ -486,10 +486,10 @@ class AgenticEvaluationTests(unittest.TestCase):
         risk_tools = RecordingTools()
         clean_tools = RecordingTools()
 
-        ModeRouterReviewer._repository_preflight(
+        repository_preflight(
             {"files": risk.files}, risk, risk_tools, repository_available=False,
         )
-        ModeRouterReviewer._repository_preflight(
+        repository_preflight(
             {"files": clean.files}, clean, clean_tools, repository_available=False,
         )
 
@@ -527,7 +527,7 @@ class AgenticEvaluationTests(unittest.TestCase):
         )
         tools = RecordingTools()
 
-        observations = ModeRouterReviewer._repository_preflight(
+        observations = repository_preflight(
             {"files": parsed.files}, parsed, tools,
         )
 
@@ -560,7 +560,7 @@ class AgenticEvaluationTests(unittest.TestCase):
         )
         tools = RecordingTools()
 
-        observations = ModeRouterReviewer._repository_preflight(
+        observations = repository_preflight(
             {"files": parsed.files}, parsed, tools, repository_available=False,
         )
 
@@ -620,7 +620,7 @@ class AgenticEvaluationTests(unittest.TestCase):
             )
         ]
 
-        self.assertEqual(1, len(ModeRouterReviewer._merge(values)))
+        self.assertEqual(1, len(merge_findings(values)))
 
     def test_same_semantic_probe_deduplicates_adjacent_lines_of_one_defect(self):
         shared_ref = {
@@ -648,7 +648,7 @@ class AgenticEvaluationTests(unittest.TestCase):
             )
         ]
 
-        merged = ModeRouterReviewer._merge(values)
+        merged = merge_findings(values)
 
         self.assertEqual(1, len(merged))
         self.assertEqual(12, merged[0].line)
@@ -680,7 +680,7 @@ class AgenticEvaluationTests(unittest.TestCase):
             )
         ]
 
-        merged = ModeRouterReviewer._merge(values)
+        merged = merge_findings(values)
 
         self.assertEqual(1, len(merged))
         self.assertEqual("CWE-522", merged[0].rule_id)
@@ -721,7 +721,7 @@ class AgenticEvaluationTests(unittest.TestCase):
             test="Cover upload_pack.", confidence=0.9, source="security",
         )
 
-        merged = ModeRouterReviewer._merge([mixed, proved])
+        merged = merge_findings([mixed, proved])
 
         self.assertEqual(1, len(merged))
         self.assertEqual("security", merged[0].source)
@@ -748,7 +748,7 @@ class AgenticEvaluationTests(unittest.TestCase):
             "_observations": [],
         }
 
-        candidates, decisions = ModeRouterReviewer._apply_critic(
+        candidates, decisions = apply_critic(
             result, [candidate],
         )
 
@@ -781,7 +781,7 @@ class AgenticEvaluationTests(unittest.TestCase):
             )
         ]
 
-        merged = ModeRouterReviewer._merge(values)
+        merged = merge_findings(values)
 
         self.assertEqual(1, len(merged))
         self.assertEqual("CWE-252", merged[0].rule_id)
@@ -804,10 +804,10 @@ class AgenticEvaluationTests(unittest.TestCase):
             )
         ]
 
-        self.assertEqual(2, len(ModeRouterReviewer._merge(values)))
+        self.assertEqual(2, len(merge_findings(values)))
 
     def test_delegation_coverage_gate_assigns_every_production_source(self):
-        delegations = ModeRouterReviewer._normalize_delegations(
+        delegations = normalize_delegations(
             [{
                 "assignment_id": "correctness-1",
                 "worker": "correctness-reliability",
@@ -842,7 +842,7 @@ class AgenticEvaluationTests(unittest.TestCase):
             {"type": "object", "properties": {}, "additionalProperties": False},
             lambda: {"evidence_id": "read_file:test", "output": "value"},
         )])
-        result = BoundedRole(
+        result = AgentLoop(
             "correctness-reliability", "Review.", SequencedClient(),
             token_budget=4000, time_budget=30, minimum_tool_calls=1,
         ).run("{}", registry, ExecutionLedger("agentic"))
@@ -887,7 +887,7 @@ class AgenticEvaluationTests(unittest.TestCase):
             },
         }]
 
-        result = BoundedRole(
+        result = AgentLoop(
             "correctness-reliability", "Review.", SequencedClient(),
             token_budget=4000, time_budget=30,
         ).run(
@@ -934,7 +934,7 @@ class AgenticEvaluationTests(unittest.TestCase):
             def complete_json(self, *_args, **_kwargs):
                 return self.actions.pop(0)
 
-        result = BoundedRole(
+        result = AgentLoop(
             "correctness-reliability", "Review.", SequencedClient(),
             token_budget=4000, time_budget=30,
         ).run(
@@ -996,7 +996,7 @@ class AgenticEvaluationTests(unittest.TestCase):
                 return "Anchor the Finding to the exact added line app.py:2."
             return ""
 
-        result = BoundedRole(
+        result = AgentLoop(
             "correctness-reliability", "Review.", SequencedClient(),
             token_budget=4000, time_budget=30,
             final_action_validator=validate,
@@ -1017,12 +1017,12 @@ class AgenticEvaluationTests(unittest.TestCase):
             "evidence": "value = decode(raw)",
         }
 
-        self.assertEqual("CWE-248", _normalize_model_rule_id(raw))
+        self.assertEqual("CWE-248", normalize_model_rule_id(raw))
         raw.update({
             "title": "Unchecked return status",
             "explanation": "The caller fails to inspect the return code.",
         })
-        self.assertEqual("CWE-252", _normalize_model_rule_id(raw))
+        self.assertEqual("CWE-252", normalize_model_rule_id(raw))
 
     def test_model_rule_normalization_corrects_git_option_bypass_cwe_697(self):
         raw = {
@@ -1035,12 +1035,12 @@ class AgenticEvaluationTests(unittest.TestCase):
             "evidence": "if option.startswith(unsafe_option):",
         }
 
-        self.assertEqual("CWE-184", _normalize_model_rule_id(raw))
+        self.assertEqual("CWE-184", normalize_model_rule_id(raw))
         raw.update({
             "title": "Unrelated incorrect comparison",
             "explanation": "Two ordinary values compare incorrectly.",
         })
-        self.assertEqual("CWE-697", _normalize_model_rule_id(raw))
+        self.assertEqual("CWE-697", normalize_model_rule_id(raw))
 
     def test_finding_location_recovers_only_from_unique_exact_added_evidence(self):
         parsed = parse_unified_diff(
@@ -1054,7 +1054,7 @@ class AgenticEvaluationTests(unittest.TestCase):
             "fix": "Validate value.", "test": "Exercise invalid value.",
         }]}
 
-        findings = _parse_findings(result, parsed, "correctness-reliability")
+        findings = parse_findings(result, parsed, "correctness-reliability")
 
         self.assertEqual(1, len(findings))
         self.assertEqual(2, findings[0].line)
@@ -1069,7 +1069,7 @@ class AgenticEvaluationTests(unittest.TestCase):
             "evidence": "a different expression",
         }]}
 
-        error = _worker_final_validation_error(result, parsed)
+        error = worker_final_validation_error(result, parsed)
 
         self.assertIn("Rejected locations: app.py:99", error)
         self.assertIn("app.py:1", error)

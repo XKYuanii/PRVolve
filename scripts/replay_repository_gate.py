@@ -12,21 +12,19 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if ROOT not in sys.path:
     sys.path.insert(0, ROOT)
 
-from evoagent.agentic_core import (  # noqa: E402
-    ModeRouterReviewer,
-    _normalize_model_rule_id,
-)
-from evoagent.diff_parser import parse_unified_diff  # noqa: E402
-from evoagent.evaluation_harness import load_jsonl  # noqa: E402
-from evoagent.evaluation_v2 import ProductionEvaluationHarness  # noqa: E402
-from evoagent.finding_policy import (  # noqa: E402
+from evoagent.agents.parsing import normalize_model_rule_id  # noqa: E402
+from evoagent.review.merge import partition_publication  # noqa: E402
+from evoagent.core.diff_parser import parse_unified_diff  # noqa: E402
+from evoagent.eval.harness import load_jsonl  # noqa: E402
+from evoagent.eval.agentic import ProductionEvaluationHarness  # noqa: E402
+from evoagent.core.finding_policy import (  # noqa: E402
     REPOSITORY_EVIDENCE_TOOLS,
     is_deterministic_finding,
     repository_evidence_refs,
 )
-from evoagent.gates import FindingGate  # noqa: E402
-from evoagent.repository_tools import RepositoryToolSuite  # noqa: E402
-from evoagent.telemetry import ExecutionLedger  # noqa: E402
+from evoagent.core.gates import FindingGate  # noqa: E402
+from evoagent.tools.repository import RepositoryToolSuite  # noqa: E402
+from evoagent.session.ledger import ExecutionLedger  # noqa: E402
 
 
 def _read(path: str) -> bytes:
@@ -123,7 +121,7 @@ def main() -> None:
         formal = harness._restore_findings(result.get("predicted_findings") or [])
         suggestions = harness._restore_findings(result.get("suggested_findings") or [])
         for finding in formal + suggestions:
-            normalized = _normalize_model_rule_id(finding.to_dict())
+            normalized = normalize_model_rule_id(finding.to_dict())
             if normalized != finding.rule_id:
                 if not finding.original_rule_id:
                     finding.original_rule_id = finding.rule_id
@@ -141,7 +139,7 @@ def main() -> None:
             (item.rule_id, item.source, item.path, item.line) for item in formal
         }
         revalidated, _demoted, _formal_decisions = (
-            ModeRouterReviewer._partition_publication(
+            partition_publication(
                 deterministic, formal, formal,
                 [
                     {"finding_index": index, "publication_ready": True}
@@ -191,7 +189,7 @@ def main() -> None:
             if len(matching) != 1:
                 continue
             recovered = harness._restore_findings(matching)[0]
-            normalized = _normalize_model_rule_id(recovered.to_dict())
+            normalized = normalize_model_rule_id(recovered.to_dict())
             if normalized != recovered.rule_id:
                 if not recovered.original_rule_id:
                     recovered.original_rule_id = recovered.rule_id
@@ -248,7 +246,7 @@ def main() -> None:
                 )
             ):
                 published, _suggestions, _decisions = (
-                    ModeRouterReviewer._partition_publication(
+                    partition_publication(
                         [], [finding], [finding],
                         [{"finding_index": 0, "publication_ready": True}],
                         repository_available=True,

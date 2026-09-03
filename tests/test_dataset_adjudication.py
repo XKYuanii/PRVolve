@@ -1,6 +1,6 @@
 import unittest
 
-from evoagent.dataset_adjudication import promote_confirmed_judgments
+from evoagent.eval.adjudication import promote_confirmed_judgments
 
 
 class DatasetAdjudicationTests(unittest.TestCase):

@@ -1,10 +1,11 @@
 import unittest
 
-from evoagent.agentic_core import ModeRouterReviewer, _collect_evidence
-from evoagent.diff_parser import parse_unified_diff
-from evoagent.finding_policy import normalize_rule_id
-from evoagent.gates import FindingGate
-from evoagent.models import Finding, Severity
+from evoagent.agents.loop import collect_evidence
+from evoagent.review.merge import partition_publication
+from evoagent.core.diff_parser import parse_unified_diff
+from evoagent.core.finding_policy import normalize_rule_id
+from evoagent.core.gates import FindingGate
+from evoagent.core.models import Finding, Severity
 
 
 DIFF = "--- a/app.py\n+++ b/app.py\n@@ -0,0 +1 @@\n+dangerous(value)\n"
@@ -40,7 +41,7 @@ class FindingPolicyTests(unittest.TestCase):
         baseline = finding("SEC-EVAL", "local-rule-scanner", Severity.CRITICAL)
         candidate = finding()
 
-        published, suggestions, decisions = ModeRouterReviewer._partition_publication(
+        published, suggestions, decisions = partition_publication(
             [baseline],
             [baseline, candidate],
             [],
@@ -59,7 +60,7 @@ class FindingPolicyTests(unittest.TestCase):
     def test_lead_selected_model_claim_without_repository_proof_is_a_suggestion(self):
         candidate = finding()
 
-        published, suggestions, decisions = ModeRouterReviewer._partition_publication(
+        published, suggestions, decisions = partition_publication(
             [],
             [candidate],
             [candidate],
@@ -85,7 +86,7 @@ class FindingPolicyTests(unittest.TestCase):
             },
         }]
 
-        published, suggestions, decisions = ModeRouterReviewer._partition_publication(
+        published, suggestions, decisions = partition_publication(
             [], [candidate], [candidate],
             [{"finding_index": 0, "publication_ready": True}],
             repository_available=False,
@@ -108,7 +109,7 @@ class FindingPolicyTests(unittest.TestCase):
             },
         }]
 
-        published, suggestions, decisions = ModeRouterReviewer._partition_publication(
+        published, suggestions, decisions = partition_publication(
             [], [candidate], [candidate],
             [{"finding_index": 0, "publication_ready": True}],
             repository_available=False,
@@ -136,7 +137,7 @@ class FindingPolicyTests(unittest.TestCase):
             },
         }]
 
-        published, suggestions, decisions = ModeRouterReviewer._partition_publication(
+        published, suggestions, decisions = partition_publication(
             [], [candidate], [candidate],
             [{"finding_index": 0, "publication_ready": True}],
             repository_available=False,
@@ -159,7 +160,7 @@ class FindingPolicyTests(unittest.TestCase):
             },
         }]
 
-        published, suggestions, decisions = ModeRouterReviewer._partition_publication(
+        published, suggestions, decisions = partition_publication(
             [], [candidate], [candidate],
             [{"finding_index": 0, "publication_ready": True}],
             repository_available=False,
@@ -182,7 +183,7 @@ class FindingPolicyTests(unittest.TestCase):
             },
         }]
 
-        published, suggestions, decisions = ModeRouterReviewer._partition_publication(
+        published, suggestions, decisions = partition_publication(
             [], [candidate], [candidate],
             [{"finding_index": 0, "publication_ready": True}],
             repository_available=False,
@@ -200,7 +201,7 @@ class FindingPolicyTests(unittest.TestCase):
             "output": {"path": "app.py", "content": "dangerous(value)"},
         }]
 
-        published, suggestions, decisions = ModeRouterReviewer._partition_publication(
+        published, suggestions, decisions = partition_publication(
             [],
             [candidate],
             [candidate],
@@ -220,7 +221,7 @@ class FindingPolicyTests(unittest.TestCase):
             "output": {"path": "app.py", "content": "dangerous(value)"},
         }]
 
-        published, suggestions, decisions = ModeRouterReviewer._partition_publication(
+        published, suggestions, decisions = partition_publication(
             [], [candidate], [candidate],
             [{"finding_index": 0, "publication_ready": True}],
             repository_available=True,
@@ -242,7 +243,7 @@ class FindingPolicyTests(unittest.TestCase):
             "output": {"path": "app.py", "content": "dangerous(value)"},
         }]
 
-        published, suggestions, decisions = ModeRouterReviewer._partition_publication(
+        published, suggestions, decisions = partition_publication(
             [], [candidate], [candidate],
             [{"finding_index": 0, "publication_ready": True}],
             repository_available=True,
@@ -264,7 +265,7 @@ class FindingPolicyTests(unittest.TestCase):
             "output": {"path": "app.py", "content": "dangerous(value)"},
         }]
 
-        published, suggestions, decisions = ModeRouterReviewer._partition_publication(
+        published, suggestions, decisions = partition_publication(
             [], [candidate], [candidate],
             [{"finding_index": 0, "publication_ready": True}],
             repository_available=True,
@@ -292,7 +293,7 @@ class FindingPolicyTests(unittest.TestCase):
             },
         }]
 
-        published, suggestions, decisions = ModeRouterReviewer._partition_publication(
+        published, suggestions, decisions = partition_publication(
             [], [candidate], [candidate],
             [{"finding_index": 0, "publication_ready": True}],
             repository_available=True,
@@ -318,7 +319,7 @@ class FindingPolicyTests(unittest.TestCase):
             },
         }]
 
-        published, _suggestions, decisions = ModeRouterReviewer._partition_publication(
+        published, _suggestions, decisions = partition_publication(
             [], [candidate], [candidate],
             [{"finding_index": 0, "publication_ready": True}],
             repository_available=True,
@@ -348,7 +349,7 @@ class FindingPolicyTests(unittest.TestCase):
             },
         }]
 
-        published, suggestions, decisions = ModeRouterReviewer._partition_publication(
+        published, suggestions, decisions = partition_publication(
             [], [candidate], [candidate],
             [{"finding_index": 0, "publication_ready": True}],
             repository_available=True,
@@ -369,7 +370,7 @@ class FindingPolicyTests(unittest.TestCase):
             "tool": "search_repository",
             "output": [{"path": "app.py", "line": 2, "content": "value = None"}],
         }]
-        published, suggestions, decisions = ModeRouterReviewer._partition_publication(
+        published, suggestions, decisions = partition_publication(
             [], [candidate], [candidate],
             [{"finding_index": 0, "publication_ready": True}],
             repository_available=True,
@@ -394,7 +395,7 @@ class FindingPolicyTests(unittest.TestCase):
             "output": {"path": "app.py", "content": "dangerous(value)"},
         }]
 
-        published, suggestions, decisions = ModeRouterReviewer._partition_publication(
+        published, suggestions, decisions = partition_publication(
             [], [candidate], [candidate],
             [{"finding_index": 0, "publication_ready": True}],
             repository_available=True,
@@ -431,7 +432,7 @@ class FindingPolicyTests(unittest.TestCase):
             },
         }]
 
-        published, _suggestions, decisions = ModeRouterReviewer._partition_publication(
+        published, _suggestions, decisions = partition_publication(
             [], [candidate], [candidate],
             [{"finding_index": 0, "publication_ready": True}],
             repository_available=True,
@@ -460,7 +461,7 @@ class FindingPolicyTests(unittest.TestCase):
             },
         }]
 
-        published, suggestions, decisions = ModeRouterReviewer._partition_publication(
+        published, suggestions, decisions = partition_publication(
             [], [candidate], [candidate],
             [{"finding_index": 0, "publication_ready": True}],
             repository_available=True,
@@ -486,7 +487,7 @@ class FindingPolicyTests(unittest.TestCase):
                 "path": "config.py", "line": 20, "content": "value = None",
             }],
         }]
-        published, suggestions, _decisions = ModeRouterReviewer._partition_publication(
+        published, suggestions, _decisions = partition_publication(
             [], [candidate], [candidate],
             [{"finding_index": 0, "publication_ready": True}],
             repository_available=True,
@@ -527,7 +528,7 @@ class FindingPolicyTests(unittest.TestCase):
             "output_preview": "[]",
         }]
 
-        published, suggestions, decisions = ModeRouterReviewer._partition_publication(
+        published, suggestions, decisions = partition_publication(
             [], [candidate], [candidate],
             [{"finding_index": 0, "publication_ready": True}],
             repository_available=True,
@@ -542,7 +543,7 @@ class FindingPolicyTests(unittest.TestCase):
             {"path": "app.py", "line": index + 1, "content": "value " + "x" * 200}
             for index in range(20)
         ]
-        evidence = _collect_evidence([{
+        evidence = collect_evidence([{
             "tool": "search_repository", "ok": True,
             "result": {
                 "evidence_id": "search_repository:large",
@@ -552,7 +553,7 @@ class FindingPolicyTests(unittest.TestCase):
         candidate = finding()
         candidate.evidence_refs = [evidence["search_repository:large"]]
 
-        published, suggestions, _decisions = ModeRouterReviewer._partition_publication(
+        published, suggestions, _decisions = partition_publication(
             [], [candidate], [candidate],
             [{"finding_index": 0, "publication_ready": True}],
             repository_available=True,
