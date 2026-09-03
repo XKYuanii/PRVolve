@@ -9,7 +9,7 @@ from dataclasses import asdict, dataclass
 from datetime import datetime
 from typing import Any, Dict, List, Optional
 
-from .events import Event, EventKind, EventLog, utc_now
+from .checkpoint import Checkpoint, CheckpointKind, CheckpointLog, utc_now
 
 
 @dataclass
@@ -48,13 +48,13 @@ def _elapsed_ms(since: str, until: str = "") -> int:
 class ExecutionLedger:
     def __init__(
         self, mode: str, input_cost_per_million: float = 0.0,
-        output_cost_per_million: float = 0.0, log: Optional[EventLog] = None,
+        output_cost_per_million: float = 0.0, log: Optional[CheckpointLog] = None,
     ):
         self.mode = mode
         self.input_cost_per_million = max(0.0, input_cost_per_million)
         self.output_cost_per_million = max(0.0, output_cost_per_million)
-        self.log = log if log is not None else EventLog()
-        events = self.log.events()
+        self.log = log if log is not None else CheckpointLog()
+        events = self.log.entries()
         self.started_at = events[0].created_at if events else utc_now()
 
     def estimate_cost(self, input_tokens: int, output_tokens: int) -> float:
@@ -75,7 +75,7 @@ class ExecutionLedger:
             float(reported_cost) if reported_cost is not None
             else self.estimate_cost(input_tokens, output_tokens)
         )
-        self.log.append(EventKind.MODEL_CALL, **asdict(ModelCall(
+        self.log.append(CheckpointKind.MODEL_CALL, **asdict(ModelCall(
             role, provider, model, input_tokens, output_tokens, round(cost, 8),
             int(duration_ms), bool(ok), str(error)[:1000],
         )))
@@ -84,34 +84,34 @@ class ExecutionLedger:
         self, role: str, tool: str, arguments: Dict[str, Any], ok: bool,
         duration_ms: int, result: Any = "", error: str = "",
     ) -> None:
-        self.log.append(EventKind.TOOL_CALL, **asdict(ToolCall(
+        self.log.append(CheckpointKind.TOOL_CALL, **asdict(ToolCall(
             role, tool, dict(arguments), bool(ok), int(duration_ms),
             str(result)[:1000], str(error)[:1000],
         )))
 
     def trace(self, role: str, event: str, **detail) -> None:
-        self.log.append(EventKind.AGENT_TRACE, role=role, event=event, detail=detail)
+        self.log.append(CheckpointKind.AGENT_TRACE, role=role, event=event, detail=detail)
 
     def tokens_used(self, role: str = "") -> int:
         return sum(
             int(item.payload["input_tokens"]) + int(item.payload["output_tokens"])
-            for item in self.log.events(EventKind.MODEL_CALL)
+            for item in self.log.entries(CheckpointKind.MODEL_CALL)
             if not role or item.payload.get("role") == role
         )
 
     def model_call_count(self) -> int:
-        return len(self.log.events(EventKind.MODEL_CALL))
+        return len(self.log.entries(CheckpointKind.MODEL_CALL))
 
     def summary(self, include_trace: bool = True) -> Dict[str, Any]:
         models: List[Dict[str, Any]] = []
         tools: List[Dict[str, Any]] = []
         traces: Dict[str, List[Dict[str, Any]]] = {}
-        for item in self.log.events():
-            if item.kind == EventKind.MODEL_CALL:
+        for item in self.log.entries():
+            if item.kind == CheckpointKind.MODEL_CALL:
                 models.append(dict(item.payload))
-            elif item.kind == EventKind.TOOL_CALL:
+            elif item.kind == CheckpointKind.TOOL_CALL:
                 tools.append(dict(item.payload))
-            elif item.kind == EventKind.AGENT_TRACE and include_trace:
+            elif item.kind == CheckpointKind.AGENT_TRACE and include_trace:
                 role_traces = traces.setdefault(str(item.payload.get("role", "")), [])
                 role_traces.append(self._trace_entry(item, len(role_traces)))
         return {
@@ -132,7 +132,7 @@ class ExecutionLedger:
             "agent_traces": traces,
         }
 
-    def _trace_entry(self, item: Event, index: int) -> Dict[str, Any]:
+    def _trace_entry(self, item: Checkpoint, index: int) -> Dict[str, Any]:
         return {
             "sequence": index + 1,
             "event": item.payload.get("event", ""),

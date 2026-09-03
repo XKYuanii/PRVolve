@@ -9,8 +9,8 @@ import json
 from typing import Any, Dict, Optional
 
 from ..core.models import TaskState
-from ..session.events import Event, EventKind
-from ..session.projections import REPORT_STAGE, stage_state, trace
+from ..session.checkpoint import Checkpoint, CheckpointKind
+from ..session.projections import REPORT_NODE, node_state, trace
 from ..store.sqlite import utc_now
 
 
@@ -72,7 +72,17 @@ class PostgresTaskStore:
             "ALTER TABLE tasks ADD COLUMN IF NOT EXISTS tenant_id TEXT NOT NULL DEFAULT 'default'",
             "ALTER TABLE tasks ADD COLUMN IF NOT EXISTS cancel_requested BOOLEAN NOT NULL DEFAULT FALSE",
             "ALTER TABLE installations ADD COLUMN IF NOT EXISTS tenant_id TEXT NOT NULL DEFAULT 'default'",
-            """CREATE TABLE IF NOT EXISTS session_events (
+            # A pre-append-only checkpoints table keyed by (task_id, node) cannot
+            # be reconciled with this one, and CREATE TABLE IF NOT EXISTS would
+            # silently keep the old shape, so it is moved aside first.
+            """DO $$ BEGIN
+                IF EXISTS (SELECT 1 FROM information_schema.columns
+                           WHERE table_name='checkpoints' AND column_name='node') THEN
+                    DROP TABLE IF EXISTS checkpoints_legacy;
+                    ALTER TABLE checkpoints RENAME TO checkpoints_legacy;
+                END IF;
+            END $$""",
+            """CREATE TABLE IF NOT EXISTS checkpoints (
                 task_id TEXT NOT NULL REFERENCES tasks(id), seq INTEGER NOT NULL,
                 kind TEXT NOT NULL, payload_json JSONB NOT NULL,
                 created_at TIMESTAMPTZ NOT NULL, PRIMARY KEY(task_id,seq))""",
@@ -608,14 +618,14 @@ class PostgresTaskStore:
             row = conn.execute("SELECT diff FROM task_payloads WHERE task_id=%s", (task_id,)).fetchone()
         return row["diff"] if row else None
 
-    def append_events(self, task_id: str, events: list) -> None:
+    def append_checkpoints(self, task_id: str, events: list) -> None:
         """Append session events and advance the task read model, in one commit."""
         if not events:
             return
         with self._connect() as conn:
             for event in events:
                 conn.execute(
-                    "INSERT INTO session_events(task_id,seq,kind,payload_json,created_at) "
+                    "INSERT INTO checkpoints(task_id,seq,kind,payload_json,created_at) "
                     "VALUES (%s,%s,%s,%s::jsonb,%s)",
                     (task_id, int(event["seq"]), str(event["kind"]),
                      json.dumps(event.get("payload") or {}, ensure_ascii=False, default=str),
@@ -623,10 +633,10 @@ class PostgresTaskStore:
                 )
                 self._apply_read_model(conn, task_id, event)
 
-    def load_events(self, task_id: str) -> list:
+    def load_checkpoints(self, task_id: str) -> list:
         with self._connect() as conn:
             rows = conn.execute(
-                "SELECT seq,kind,payload_json,created_at FROM session_events "
+                "SELECT seq,kind,payload_json,created_at FROM checkpoints "
                 "WHERE task_id=%s ORDER BY seq", (task_id,)
             ).fetchall()
         return [
@@ -638,9 +648,9 @@ class PostgresTaskStore:
         ]
 
     def event_log(self, task_id: str):
-        from ..session.events import EventLog
-        return EventLog(self, task_id, [
-            Event.from_dict(item) for item in self.load_events(task_id)
+        from ..session.checkpoint import CheckpointLog
+        return CheckpointLog(self, task_id, [
+            Checkpoint.from_dict(item) for item in self.load_checkpoints(task_id)
         ])
 
     @staticmethod
@@ -648,21 +658,21 @@ class PostgresTaskStore:
         kind = str(event["kind"])
         payload = event.get("payload") or {}
         now = str(event.get("created_at") or utc_now())
-        if kind == EventKind.STAGE_STARTED:
+        if kind == CheckpointKind.NODE_STARTED:
             conn.execute(
                 "UPDATE tasks SET state=%s,updated_at=%s WHERE id=%s "
                 "AND state NOT IN (%s,%s,%s)",
-                (stage_state(str(payload.get("stage", ""))).value, now, task_id,
+                (node_state(str(payload.get("node", ""))).value, now, task_id,
                  TaskState.SUCCESS.value, TaskState.FAILED.value,
                  TaskState.CANCELLED.value),
             )
-        elif kind == EventKind.STAGE_COMPLETED and payload.get("stage") == REPORT_STAGE:
+        elif kind == CheckpointKind.NODE_COMPLETED and payload.get("node") == REPORT_NODE:
             conn.execute(
                 "UPDATE tasks SET report_json=%s::jsonb,updated_at=%s WHERE id=%s",
                 (json.dumps((payload.get("output") or {}).get("report") or {},
                             ensure_ascii=False), now, task_id),
             )
-        elif kind == EventKind.TASK_SUCCEEDED:
+        elif kind == CheckpointKind.TASK_SUCCEEDED:
             conn.execute(
                 "UPDATE tasks SET state=%s,error=NULL,"
                 "cancel_requested=FALSE,updated_at=%s WHERE id=%s",
@@ -673,13 +683,13 @@ class PostgresTaskStore:
                 "AND category='execution_error' AND resolved=FALSE",
                 (task_id,),
             )
-        elif kind == EventKind.TASK_FAILED:
+        elif kind == CheckpointKind.TASK_FAILED:
             conn.execute(
                 "UPDATE tasks SET state=%s,error=%s,updated_at=%s WHERE id=%s",
                 (TaskState.FAILED.value, str(payload.get("error", ""))[:2000],
                  now, task_id),
             )
-        elif kind == EventKind.TASK_CANCELLED:
+        elif kind == CheckpointKind.TASK_CANCELLED:
             conn.execute(
                 "UPDATE tasks SET state=%s,cancel_requested=FALSE,updated_at=%s "
                 "WHERE id=%s",

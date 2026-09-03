@@ -6,8 +6,8 @@ from datetime import datetime, timezone
 from typing import Any, Dict, Optional
 
 from ..core.models import TaskState
-from ..session.events import Event, EventKind
-from ..session.projections import REPORT_STAGE, stage_state, trace
+from ..session.checkpoint import Checkpoint, CheckpointKind
+from ..session.projections import REPORT_NODE, node_state, trace
 
 
 def utc_now() -> str:
@@ -24,9 +24,9 @@ class TaskStore:
         conn = sqlite3.connect(self.path, timeout=10)
         conn.row_factory = sqlite3.Row
         # The event log makes writes frequent and small - one row per model
-        # call, tool call and stage transition. NORMAL still fsyncs at WAL
+        # call, tool call and node transition. NORMAL still fsyncs at WAL
         # checkpoints, which is the durability this log needs: a crash can cost
-        # the last few events, and re-running one stage is exactly what the log
+        # the last few entries, and re-running one node is exactly what the log
         # is there to make cheap.
         conn.execute("PRAGMA synchronous=NORMAL")
         return conn
@@ -140,8 +140,9 @@ class TaskStore:
             self._ensure_column(conn, "tasks", "tenant_id", "TEXT NOT NULL DEFAULT 'default'")
             self._ensure_column(conn, "tasks", "cancel_requested", "INTEGER NOT NULL DEFAULT 0")
             self._ensure_column(conn, "installations", "tenant_id", "TEXT NOT NULL DEFAULT 'default'")
+            self._retire_node_keyed_checkpoints(conn)
             conn.execute(
-                """CREATE TABLE IF NOT EXISTS session_events (
+                """CREATE TABLE IF NOT EXISTS checkpoints (
                     task_id TEXT NOT NULL,
                     seq INTEGER NOT NULL,
                     kind TEXT NOT NULL,
@@ -298,6 +299,23 @@ class TaskStore:
                 "CREATE INDEX IF NOT EXISTS idx_agent_memories_lookup "
                 "ON agent_memories(tenant_id, repository, scope, created_at)"
             )
+
+    @staticmethod
+    def _retire_node_keyed_checkpoints(conn: sqlite3.Connection) -> None:
+        """Set aside a pre-append-only ``checkpoints`` table before recreating it.
+
+        The old table stored one overwritable row per (task_id, node); the new
+        one appends facts keyed by (task_id, seq). The two cannot be reconciled,
+        and CREATE TABLE IF NOT EXISTS would silently keep the old shape, so the
+        old rows are moved aside where they can still be inspected. In-flight
+        tasks lose their resume point and re-run from the start.
+        """
+        columns = {
+            row[1] for row in conn.execute("PRAGMA table_info(checkpoints)").fetchall()
+        }
+        if columns and "seq" not in columns:
+            conn.execute("DROP TABLE IF EXISTS checkpoints_legacy")
+            conn.execute("ALTER TABLE checkpoints RENAME TO checkpoints_legacy")
 
     @staticmethod
     def _ensure_column(conn: sqlite3.Connection, table: str, column: str, declaration: str) -> None:
@@ -789,7 +807,7 @@ class TaskStore:
             ).fetchone()
         return str(row["tenant_id"]) if row else None
 
-    def append_events(self, task_id: str, events: list) -> None:
+    def append_checkpoints(self, task_id: str, events: list) -> None:
         """Append session events and advance the task read model, in one commit.
 
         The event log is authoritative; the ``tasks`` row is a denormalized view
@@ -800,7 +818,7 @@ class TaskStore:
             return
         with self._lock, self._connect() as conn:
             conn.executemany(
-                "INSERT INTO session_events(task_id,seq,kind,payload_json,created_at) "
+                "INSERT INTO checkpoints(task_id,seq,kind,payload_json,created_at) "
                 "VALUES (?,?,?,?,?)",
                 [
                     (task_id, int(event["seq"]), str(event["kind"]),
@@ -814,15 +832,15 @@ class TaskStore:
 
     def event_log(self, task_id: str):
         """The task's log, hydrated for projection."""
-        from ..session.events import EventLog
-        return EventLog(self, task_id, [
-            Event.from_dict(item) for item in self.load_events(task_id)
+        from ..session.checkpoint import CheckpointLog
+        return CheckpointLog(self, task_id, [
+            Checkpoint.from_dict(item) for item in self.load_checkpoints(task_id)
         ])
 
-    def load_events(self, task_id: str) -> list:
+    def load_checkpoints(self, task_id: str) -> list:
         with self._connect() as conn:
             rows = conn.execute(
-                "SELECT seq,kind,payload_json,created_at FROM session_events "
+                "SELECT seq,kind,payload_json,created_at FROM checkpoints "
                 "WHERE task_id=? ORDER BY seq", (task_id,)
             ).fetchall()
         return [
@@ -839,22 +857,22 @@ class TaskStore:
         kind = str(event["kind"])
         payload = event.get("payload") or {}
         now = str(event.get("created_at") or utc_now())
-        if kind == EventKind.STAGE_STARTED:
-            state = stage_state(str(payload.get("stage", ""))).value
+        if kind == CheckpointKind.NODE_STARTED:
+            state = node_state(str(payload.get("node", ""))).value
             conn.execute(
                 "UPDATE tasks SET state=?,updated_at=? WHERE id=? AND state NOT IN (?,?,?)",
                 (state, now, task_id, TaskState.SUCCESS.value,
                  TaskState.FAILED.value, TaskState.CANCELLED.value),
             )
-        elif kind == EventKind.STAGE_COMPLETED and payload.get("stage") == REPORT_STAGE:
-            # The report is stored once, by the stage that builds it; the read
+        elif kind == CheckpointKind.NODE_COMPLETED and payload.get("node") == REPORT_NODE:
+            # The report is stored once, by the node that builds it; the read
             # model copies it here so list views do not fold the log.
             conn.execute(
                 "UPDATE tasks SET report_json=?,updated_at=? WHERE id=?",
                 (json.dumps((payload.get("output") or {}).get("report") or {},
                             ensure_ascii=False), now, task_id),
             )
-        elif kind == EventKind.TASK_SUCCEEDED:
+        elif kind == CheckpointKind.TASK_SUCCEEDED:
             conn.execute(
                 "UPDATE tasks SET state=?,error=NULL,cancel_requested=0,"
                 "updated_at=? WHERE id=?",
@@ -865,12 +883,12 @@ class TaskStore:
                 "AND category = 'execution_error' AND resolved = 0",
                 (task_id,),
             )
-        elif kind == EventKind.TASK_FAILED:
+        elif kind == CheckpointKind.TASK_FAILED:
             conn.execute(
                 "UPDATE tasks SET state=?,error=?,updated_at=? WHERE id=?",
                 (TaskState.FAILED.value, str(payload.get("error", ""))[:2000], now, task_id),
             )
-        elif kind == EventKind.TASK_CANCELLED:
+        elif kind == CheckpointKind.TASK_CANCELLED:
             conn.execute(
                 "UPDATE tasks SET state=?,cancel_requested=0,updated_at=? WHERE id=?",
                 (TaskState.CANCELLED.value, now, task_id),

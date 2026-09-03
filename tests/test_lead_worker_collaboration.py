@@ -6,7 +6,7 @@ import unittest
 from evoagent.review.agentic import AgenticReviewer
 from evoagent.core.diff_parser import parse_unified_diff
 from evoagent.agents.memory import MemoryManager
-from evoagent.session.events import EventLog
+from evoagent.session.checkpoint import CheckpointLog
 from evoagent.session.projections import progress
 from evoagent.store.sqlite import TaskStore
 
@@ -132,19 +132,19 @@ class LeadWorkerCollaborationTests(unittest.TestCase):
         self.assertEqual(2, client.security_calls)
         self.assertEqual(1, len(summary["collaboration"]["revision_results"]))
         self.assertEqual("lead-final", summary["collaboration"]["stop_reason"])
-        session_events = {
+        checkpoints = {
             item["event"]
             for item in summary["execution"]["agent_traces"]["lead-session"]
         }
         self.assertTrue({
             "assignment_created", "worker_reported", "revision_completed",
             "lead_activated", "lead_completed",
-        }.issubset(session_events))
-        stages = progress(EventLog.load(self.store, "task"))
-        self.assertEqual("completed", stages["review.scan"]["status"])
-        self.assertEqual("completed", stages["review.delegate"]["status"])
-        self.assertEqual("completed", stages["review.work:security-1"]["status"])
-        self.assertEqual("completed", stages["review.arbitrate"]["status"])
+        }.issubset(checkpoints))
+        nodes = progress(CheckpointLog.load(self.store, "task"))
+        self.assertEqual("completed", nodes["planning.scan"]["status"])
+        self.assertEqual("completed", nodes["planning.delegate"]["status"])
+        self.assertEqual("completed", nodes["executing.work:security-1"]["status"])
+        self.assertEqual("completed", nodes["reviewing.arbitrate"]["status"])
 
     def test_completed_session_resumes_without_repeating_agent_calls(self):
         first = HierarchicalClient()
@@ -187,9 +187,9 @@ class LeadWorkerCollaborationTests(unittest.TestCase):
             AgenticReviewer(self.store, killed).review_with_context(
                 "task", DIFF, parse_unified_diff(DIFF), "org/repo"
             )
-        stages = progress(EventLog.load(self.store, "task"))
-        self.assertEqual("completed", stages["review.work:security-1"]["status"])
-        self.assertEqual("running", stages["review.work:reliability-1"]["status"])
+        nodes = progress(CheckpointLog.load(self.store, "task"))
+        self.assertEqual("completed", nodes["executing.work:security-1"]["status"])
+        self.assertEqual("running", nodes["executing.work:reliability-1"]["status"])
 
         resumed_client = HierarchicalClient()
         AgenticReviewer(self.store, resumed_client).review_with_context(
@@ -199,12 +199,12 @@ class LeadWorkerCollaborationTests(unittest.TestCase):
         # The scan, the delegation and the finished security worker are read
         # back from the log; only the worker that died is started again. The
         # second security call is the Lead's revision request, a new stage.
-        stages = progress(EventLog.load(self.store, "task"))
+        nodes = progress(CheckpointLog.load(self.store, "task"))
         self.assertNotIn(("lead", "delegate"), resumed_client.calls)
-        self.assertEqual(1, stages["review.scan"]["attempt"])
-        self.assertEqual(1, stages["review.delegate"]["attempt"])
-        self.assertEqual(1, stages["review.work:security-1"]["attempt"])
-        self.assertEqual(2, stages["review.work:reliability-1"]["attempt"])
+        self.assertEqual(1, nodes["planning.scan"]["attempt"])
+        self.assertEqual(1, nodes["planning.delegate"]["attempt"])
+        self.assertEqual(1, nodes["executing.work:security-1"]["attempt"])
+        self.assertEqual(2, nodes["executing.work:reliability-1"]["attempt"])
 
     def test_gate_decisions_are_archived_for_future_agent_recall(self):
         memory = MemoryManager(self.store)

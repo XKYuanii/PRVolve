@@ -7,8 +7,8 @@ from evoagent.review.agentic import AgentLoop
 from evoagent.llm.context import ContextManager
 from evoagent.agents.memory import MemoryManager
 from evoagent.errors import ToolProtocolError
-from evoagent.review.stages import StageRunner
-from evoagent.session.events import EventLog
+from evoagent.review.runtime import AgentRuntime
+from evoagent.session.checkpoint import CheckpointLog
 from evoagent.session.projections import progress
 from evoagent.tools.registry import AgentTool, ToolRegistry
 from evoagent.store.sqlite import TaskStore, utc_now
@@ -29,7 +29,7 @@ class RuntimeMemoryTests(unittest.TestCase):
         calls = []
 
         def drive():
-            runner = StageRunner(EventLog.load(self.store, "staged-task"))
+            runner = AgentRuntime(CheckpointLog.load(self.store, "staged-task"))
             planned = runner.run(
                 "parse", lambda: calls.append("parse") or {"value": 2},
             )
@@ -52,8 +52,8 @@ class RuntimeMemoryTests(unittest.TestCase):
                 raise RuntimeError("transient provider failure")
             return {"ok": True}
 
-        log = EventLog.load(self.store, "retry-task")
-        output = StageRunner(log, retries=2).run("review", flaky)
+        log = CheckpointLog.load(self.store, "retry-task")
+        output = AgentRuntime(log, retries=2).run("review", flaky)
 
         self.assertEqual({"ok": True}, output)
         self.assertEqual(3, progress(log)["review"]["attempt"])
@@ -66,9 +66,9 @@ class RuntimeMemoryTests(unittest.TestCase):
             attempts.append(1)
             raise ValueError("diff is not a unified diff")
 
-        log = EventLog.load(self.store, "invalid-task")
+        log = CheckpointLog.load(self.store, "invalid-task")
         with self.assertRaises(ValueError):
-            StageRunner(log, retries=2).run("parse", invalid)
+            AgentRuntime(log, retries=2).run("parse", invalid)
 
         self.assertEqual(1, len(attempts))
         self.assertEqual("failed", progress(log)["parse"]["status"])

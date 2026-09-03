@@ -1,16 +1,23 @@
-"""The hierarchical review: a Lead, bounded workers, a Critic, one log.
+"""The hierarchical review: a Lead, bounded Workers, a Critic, one log.
 
-Each phase here is a stage on the session log, under the same runner and the
-same resume rule the pipeline uses. There is no session snapshot and no second
-checkpoint format: a stage that completed is a fact in the log, so a restarted
-worker re-reads its output instead of re-running it - down to the individual
-worker assignment, which is where a review actually spends its money.
+The reviewer implements the harness protocol as three methods, one per node:
+
+    plan     deterministic scanners, repository context, Lead decomposition
+    execute  Workers in parallel, then the Lead assess/revision loop
+    judge    Critic challenge, Lead arbitration, gates, run summary
+
+Each records its own sub-nodes (``executing.work:security-1``) through the same
+``AgentRuntime`` and the same checkpoint log the harness uses, so a restarted
+worker re-reads whatever finished and re-runs only what did not - down to the
+individual assignment, which is where a review actually spends its money.
 """
 import json
 import os
 import threading
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
+from contextlib import contextmanager
+from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional, Set
 
 from ..agents.loop import AgentLoop
@@ -24,12 +31,13 @@ from ..core.gates import FindingGate
 from ..core.models import ComponentKind, Finding
 from ..core.modes import component, resolve_mode
 from ..llm.context import ContextManager
-from ..session.events import EventLog
+from ..session.checkpoint import CheckpointLog
 from ..session.ledger import ExecutionLedger
 from ..tools.registry import AgentTool
 from ..tools.repository import RepositoryToolSuite
 from .context import (
-    REVIEW, ReviewOutcome, ReviewSession, outcome_from_stage, outcome_to_stage,
+    EXECUTING, PLANNING, REVIEWING, ReviewOutcome, ReviewSession,
+    outcome_from_report, summary_from_report,
 )
 from .merge import (
     apply_critic, apply_lead_final, attach_diff_ast_evidence, candidates_from,
@@ -39,11 +47,27 @@ from .merge import (
 )
 from .preflight import repository_preflight
 from .reviewers import LocalRuleReviewer, Reviewer
-from .stages import StageRunner
+from .runtime import AgentRuntime
+
+
+@dataclass
+class RunContext:
+    """Per-run setup. Derived from task input, so it is rebuilt on every node
+    and on every resume rather than checkpointed."""
+
+    resolution: Any
+    ledger: ExecutionLedger
+    root: str
+    suite: RepositoryToolSuite
+    enabled: Set[str]
+    workers: List[str]
+    scanners: List[Reviewer]
+    skills: Dict[str, Any] = field(default_factory=dict)
+    requested_skills: List[str] = field(default_factory=list)
 
 
 class AgenticReviewer(Reviewer):
-    """Runs the Lead/worker/Critic protocol as resumable stages on the log."""
+    """Runs the Lead/Worker/Critic protocol as resumable nodes on the log."""
 
     name = "mode-router"
 
@@ -105,42 +129,219 @@ class AgenticReviewer(Reviewer):
 
     def review(self, diff: str, parsed: ParsedDiff) -> List[Finding]:
         raise RuntimeError(
-            "agentic review requires review_session and a configured model"
+            "agentic review requires the plan/execute/judge protocol and a model"
         )
 
-    # -- entry points ------------------------------------------------------
+    # -- the three harness nodes -------------------------------------------
 
-    def review_session(self, session: ReviewSession) -> ReviewOutcome:
-        """Run the protocol against the session the pipeline already opened."""
-        with self._memory_scope_lock:
-            self._memory_scopes[session.task_id] = (session.tenant_id, session.repository)
-        try:
-            return self._review(session)
-        finally:
-            # Do not leave a stale tenant/repository binding behind when setup,
-            # a model call, or a gate raises. Working observations themselves
-            # retain their TTL so a resumed task can still use them.
-            with self._memory_scope_lock:
-                self._memory_scopes.pop(session.task_id, None)
+    def plan(self, session: ReviewSession) -> Dict[str, Any]:
+        """planning: deterministic scan, repository context, Lead decomposition."""
+        with self._memory_scope(session):
+            run = self._open_run(session)
+            self.context_manager.begin(session.task_id)
+            memory_context = self._recall(session, run.ledger)
+            scanned = session.runtime.run(
+                session.sub(PLANNING, "scan"),
+                lambda: self._scan(session, run.ledger, run.scanners),
+                "Running deterministic scanners",
+            )
+            delegated = session.runtime.run(
+                session.sub(PLANNING, "delegate"),
+                lambda: self._delegate(
+                    session, run, scanned["findings"], memory_context,
+                ),
+                "Lead is decomposing the review",
+            )
+            return {
+                "scanner_findings": scanned["findings"],
+                "scanner_components": scanned["components"],
+                "delegations": delegated["delegations"],
+                "lead_delegation": delegated["decision"],
+                "memory_context": memory_context,
+                "run_mode": run.resolution.to_dict(),
+                "repository_context": {
+                    "available": run.suite.repository_available,
+                    "root_supplied": bool(run.root),
+                },
+                "context_management": self.context_manager.summary(session.task_id),
+            }
+
+    def execute(self, session: ReviewSession, planned: Dict[str, Any]) -> Dict[str, Any]:
+        """executing: Workers in parallel, then the Lead's assess/revision loop."""
+        with self._memory_scope(session):
+            run = self._open_run(session)
+            self.context_manager.restore(
+                session.task_id, planned.get("context_management")
+            )
+            memory_context = planned["memory_context"]
+            delegations = planned["delegations"]
+            rule_findings = restore_findings(planned["scanner_findings"])
+
+            worker_results = self._run_assignments(
+                session, run, delegations, planned["scanner_findings"], 0,
+                memory_context,
+            )
+            max_rounds = self._max_revision_rounds()
+            assessments: List[dict] = []
+            revision_results: Dict[str, dict] = {}
+            stop_reason = ""
+            critic_objective = ""
+            for index in range(max_rounds + 1):
+                candidates = candidates_from(rule_findings, worker_results)
+                assessment = session.runtime.run(
+                    session.sub(EXECUTING, "assess-%d" % index),
+                    lambda candidates=candidates, index=index: {
+                        "decision": public_decision(self._assess(
+                            session, run, delegations, worker_results, candidates,
+                            index, max_rounds, memory_context,
+                        ))
+                    },
+                    "Lead is assessing worker output (round %d)" % index,
+                )["decision"]
+                assessments.append(assessment)
+                critic_objective = str(assessment.get("critic_objective", ""))
+                requests = normalize_revision_requests(
+                    assessment.get("revision_requests"), delegations,
+                )
+                if not requests or index >= max_rounds:
+                    if requests:
+                        stop_reason = (
+                            "revision-skipped-stability-profile" if max_rounds == 0
+                            else "revision-budget-exhausted"
+                        )
+                    break
+                revisions = []
+                for request in requests:
+                    original = next(
+                        item for item in delegations
+                        if item["assignment_id"] == request["assignment_id"]
+                    )
+                    revision = dict(original)
+                    revision["run_id"] = "%d:%s" % (index + 1, request["assignment_id"])
+                    revision["revision_round"] = index + 1
+                    revision["lead_feedback"] = request["guidance"]
+                    revision["required_evidence"] = request["required_evidence"]
+                    revisions.append(revision)
+                revised = self._run_assignments(
+                    session, run, revisions, planned["scanner_findings"], index + 1,
+                    memory_context,
+                )
+                for revision in revisions:
+                    key = revision["run_id"]
+                    result = revised[key]
+                    revision_results[key] = result
+                    worker_results[revision["assignment_id"]] = result
+                    run.ledger.trace(
+                        "lead-session", "revision_completed",
+                        assignment_id=revision["assignment_id"],
+                        worker=revision["worker"], round=index + 1,
+                        status=result["status"],
+                    )
+            return {
+                "worker_results": worker_results,
+                "lead_assessments": assessments,
+                "revision_results": revision_results,
+                "stop_reason": stop_reason or "lead-final",
+                "critic_objective": critic_objective,
+                "context_management": self.context_manager.summary(session.task_id),
+            }
+
+    def judge(
+        self, session: ReviewSession, planned: Dict[str, Any], executed: Dict[str, Any],
+    ) -> ReviewOutcome:
+        """reviewing: Critic challenge, Lead arbitration, gates, run summary."""
+        with self._memory_scope(session):
+            run = self._open_run(session)
+            self.context_manager.restore(
+                session.task_id, executed.get("context_management")
+            )
+            memory_context = planned["memory_context"]
+            rule_findings = restore_findings(planned["scanner_findings"])
+            worker_results = executed["worker_results"]
+            candidates = candidates_from(rule_findings, worker_results)
+            before_critic = len(candidates)
+
+            if "critic" in run.enabled and candidates:
+                judged = session.runtime.run(
+                    session.sub(REVIEWING, "critic"),
+                    lambda: self._critic(
+                        session, run, candidates, executed["critic_objective"],
+                        memory_context,
+                    ),
+                    "Critic is challenging %d candidate finding(s)" % len(candidates),
+                )
+                candidates = restore_findings(judged["candidates"])
+                critic_decisions = judged["decisions"]
+            else:
+                critic_decisions = [
+                    {"finding_index": index, "accepted": True, "objections": []}
+                    for index in range(len(candidates))
+                ]
+
+            arbitrated = session.runtime.run(
+                session.sub(REVIEWING, "arbitrate"),
+                lambda: {"decision": public_decision(self._arbitrate(
+                    session, run, candidates, critic_decisions, worker_results,
+                    memory_context,
+                ))},
+                "Lead is arbitrating the final finding set",
+            )
+            lead_final = arbitrated["decision"]
+            lead_accepted = apply_lead_final(lead_final, candidates)
+            accepted, suggestions, publication_decisions = partition_publication(
+                rule_findings, candidates, lead_accepted, critic_decisions,
+                run.suite.repository_available,
+                critic_required="critic" in run.enabled,
+                publish_unverified_suggestions=bool(
+                    self.structured_config.get("publish_unverified_suggestions", True)
+                ),
+            )
+            collaboration = self._collaboration(
+                run, planned, executed, lead_final, publication_decisions,
+                critic_decisions,
+                len(rule_findings), before_critic, len(accepted), suggestions,
+            )
+            gated = self.gate.apply(accepted, session.parsed)
+            run.ledger.trace("evidence-gate", "completed", **gated.checks)
+            self._persist_task_memory(
+                session.task_id, session.tenant_id, session.repository, accepted,
+                gated, session.parsed.files, collaboration,
+            )
+            execution = run.ledger.summary()
+            execution["context_management"] = self.context_manager.summary(session.task_id)
+            summary = {
+                "run_mode": planned["run_mode"],
+                "components": planned["scanner_components"] + self._role_components(run) + [
+                    component(ComponentKind.GATE, "finding-format-gate"),
+                    component(ComponentKind.GATE, "evidence-gate"),
+                    component(ComponentKind.GATE, "confidence-gate"),
+                    component(ComponentKind.GATE, "release-gate"),
+                ],
+                "execution": execution,
+                "collaboration": collaboration,
+                "suggested_findings": [item.to_dict() for item in suggestions],
+                "gates": gated.checks,
+                "rejected_findings": gated.rejected,
+                "repository_context": planned["repository_context"],
+                "context_management": execution["context_management"],
+            }
+            return ReviewOutcome(gated.accepted, summary)
+
+    # -- standalone entry, for evaluation and Skill replay ------------------
 
     def review_outcome(
         self, task_id: str, diff: str, parsed: ParsedDiff,
         repository: str = "", tenant_id: str = "default",
     ) -> ReviewOutcome:
-        """Run the protocol standalone, on a session opened just for this call.
+        """Run the same three nodes without a harness, on a session of our own."""
+        from .harness import build_report, drive
 
-        Evaluation and evolution drive the reviewer directly rather than through
-        the pipeline; they get the same log, stages and resume behaviour, and the
-        summary comes back with the findings instead of via a second lookup.
-        """
         session = self.open_session(task_id, diff, parsed, repository, tenant_id)
-        # Wrap the run in the same `review` stage the pipeline would open, so
-        # both entry points produce one identically shaped log.
-        stored = session.runner.run(
-            REVIEW, lambda: outcome_to_stage(self.review_session(session)),
-            "Reviewing %d changed files" % len(parsed.files),
+        report = drive(
+            session, self,
+            lambda run_session, outcome: build_report(run_session, outcome, self.name),
         )
-        return outcome_from_stage(stored)
+        return outcome_from_report(report)
 
     def review_with_context(
         self, task_id: str, diff: str, parsed: ParsedDiff,
@@ -152,29 +353,29 @@ class AgenticReviewer(Reviewer):
         self, task_id: str, diff: str, parsed: ParsedDiff,
         repository: str = "", tenant_id: str = "default",
     ) -> ReviewSession:
-        log = EventLog.load(self.store, task_id)
+        log = CheckpointLog.load(self.store, task_id)
         task = (self.store.get(task_id, tenant_id) or {}) if task_id else {}
         return ReviewSession(
             task_id=task_id, repository=repository, pull_request=None,
             tenant_id=tenant_id, diff=diff, parsed=parsed, log=log,
-            runner=StageRunner(log), task_input=task.get("input") or {},
+            runtime=AgentRuntime(log), task_input=task.get("input") or {},
         )
 
     def collaboration_summary(self, task_id: str) -> dict:
         """Project the run summary out of the log; never a cached side table."""
         if not task_id:
             return {}
-        stored = StageRunner(EventLog.load(self.store, task_id)).output(REVIEW)
-        return dict((stored or {}).get("summary") or {})
+        stored = AgentRuntime(CheckpointLog.load(self.store, task_id)).checkpoint(REVIEWING)
+        report = (stored or {}).get("report")
+        return summary_from_report(report) if report else {}
 
-    # -- the protocol ------------------------------------------------------
+    # -- per-run setup, rebuilt on every node and on every resume -----------
 
-    def _review(self, session: ReviewSession) -> ReviewOutcome:
+    def _open_run(self, session: ReviewSession) -> "RunContext":
         task_input = session.task_input
         resolution = resolve_mode(task_input.get("mode"), self.client is not None)
         if self.client is None:
             raise RuntimeError("agentic review requires a configured model")
-        self.context_manager.begin(session.task_id)
         ledger = ExecutionLedger(
             resolution.effective.value, self.input_cost_per_million,
             self.output_cost_per_million, log=session.log,
@@ -182,60 +383,51 @@ class AgenticReviewer(Reviewer):
         root = str(task_input.get("repository_root") or "")
         if not root and os.path.isdir(session.repository):
             root = session.repository
-        suite = RepositoryToolSuite(
-            root, session.diff, session.parsed, ledger, self.review_test_command
-        )
         enabled = set(task_input.get("enabled_agents") or self.enabled_roles)
-        scanners = self.scanners + (
-            list(self.scanner_provider(session.tenant_id)) if self.scanner_provider else []
-        )
-        available_skills = {
+        if "lead" not in enabled:
+            raise ValueError("agentic mode requires the lead Agent")
+        skills = {
             skill.name: skill
             for skill in (
                 list(self.skill_provider(session.tenant_id)) if self.skill_provider else []
             )
         }
-        requested_skills = [str(value) for value in task_input.get("enabled_skills") or []]
-        unknown_skills = set(requested_skills).difference(available_skills)
-        if unknown_skills:
+        requested = [str(value) for value in task_input.get("enabled_skills") or []]
+        unknown = set(requested).difference(skills)
+        if unknown:
             raise ValueError(
-                "unknown enabled Agent Skill(s): %s" % ", ".join(sorted(unknown_skills))
+                "unknown enabled Agent Skill(s): %s" % ", ".join(sorted(unknown))
             )
-        memory_context = self._recall(session, ledger)
-
-        findings, collaboration, components = self._protocol(
-            session, suite, ledger, enabled, scanners, memory_context,
-            available_skills, requested_skills,
-        )
-        gated = self.gate.apply(findings, session.parsed)
-        ledger.trace("evidence-gate", "completed", **gated.checks)
-        self._persist_task_memory(
-            session.task_id, session.tenant_id, session.repository, findings, gated,
-            session.parsed.files, collaboration,
-        )
-        execution = ledger.summary()
-        context_management = self.context_manager.summary(session.task_id)
-        execution["context_management"] = context_management
-        summary = {
-            "run_mode": resolution.to_dict(),
-            "components": components + [
-                component(ComponentKind.GATE, "finding-format-gate"),
-                component(ComponentKind.GATE, "evidence-gate"),
-                component(ComponentKind.GATE, "confidence-gate"),
-                component(ComponentKind.GATE, "release-gate"),
+        return RunContext(
+            resolution=resolution, ledger=ledger, root=root,
+            suite=RepositoryToolSuite(
+                root, session.diff, session.parsed, ledger, self.review_test_command
+            ),
+            enabled=enabled,
+            workers=[
+                name for name in ("security", "correctness-reliability")
+                if name in enabled
             ],
-            "execution": execution,
-            "collaboration": collaboration,
-            "suggested_findings": list(collaboration.get("suggested_findings") or []),
-            "gates": gated.checks,
-            "rejected_findings": gated.rejected,
-            "repository_context": {
-                "available": suite.repository_available,
-                "root_supplied": bool(root),
-            },
-            "context_management": context_management,
-        }
-        return ReviewOutcome(gated.accepted, summary)
+            scanners=self.scanners + (
+                list(self.scanner_provider(session.tenant_id))
+                if self.scanner_provider else []
+            ),
+            skills=skills, requested_skills=requested,
+        )
+
+    @contextmanager
+    def _memory_scope(self, session: ReviewSession):
+        """Bind the tenant/repository the role memory hooks write under."""
+        with self._memory_scope_lock:
+            self._memory_scopes[session.task_id] = (session.tenant_id, session.repository)
+        try:
+            yield
+        finally:
+            # Do not leave a stale binding behind when setup, a model call or a
+            # gate raises. Working observations keep their TTL, so a resumed
+            # task can still use them.
+            with self._memory_scope_lock:
+                self._memory_scopes.pop(session.task_id, None)
 
     def _recall(self, session: ReviewSession, ledger: ExecutionLedger) -> Dict[str, Any]:
         memory_query = self.context_manager.memory_query(session.diff, session.parsed.files)
@@ -254,160 +446,38 @@ class AgenticReviewer(Reviewer):
             "context-manager", "memory_recalled", count=len(recalled),
             repository=session.repository, tenant_id=session.tenant_id,
         )
-        return self.context_manager.format_memories(recalled)
-
-    def _protocol(
-        self, session: ReviewSession, suite, ledger, enabled, scanners,
-        memory_context, available_skills, requested_skills,
-    ):
-        if "lead" not in enabled:
-            raise ValueError("agentic mode requires the lead Agent")
-        runner = session.runner
-        parsed = session.parsed
-        worker_roles = [
-            name for name in ("security", "correctness-reliability")
-            if name in enabled
-        ]
-        memory_context = memory_context or {
+        return self.context_manager.format_memories(recalled) or {
             "trust": "untrusted historical hints; verify with current diff or tools",
             "items": [],
         }
 
-        scanned = runner.run(
-            session.stage("scan"), lambda: self._scan(session, ledger, scanners),
-            "Running deterministic scanners",
-        )
-        rule_findings = restore_findings(scanned["findings"])
-
-        delegated = runner.run(
-            session.stage("delegate"),
-            lambda: self._delegate(
-                session, suite, ledger, worker_roles, scanned["findings"],
-                memory_context, available_skills, requested_skills,
-            ),
-            "Lead is decomposing the review",
-        )
-        delegations = delegated["delegations"]
-
-        worker_results = self._run_assignments(
-            session, suite, ledger, delegations, scanned["findings"], 0,
-            memory_context, available_skills,
-        )
-
-        max_revision_rounds = self._max_revision_rounds()
-        lead_assessments: List[dict] = []
-        revision_results: Dict[str, dict] = {}
-        stop_reason = ""
-        final_assessment: Dict[str, Any] = {}
-        for index in range(max_revision_rounds + 1):
-            candidates = candidates_from(rule_findings, worker_results)
-            assessment = runner.run(
-                session.stage("assess-%d" % index),
-                lambda candidates=candidates, index=index: {
-                    "decision": public_decision(self._run_lead(
-                        "assess-workers", {
-                            **self._model_diff(
-                                session.diff, session.task_id, "lead:assess-workers",
-                                focus_files=[item.path for item in candidates],
-                            ),
-                            "assignments": delegations,
-                            "worker_results": list(worker_results.values()),
-                            "candidate_findings": [item.to_dict() for item in candidates],
-                            "revision_round": index,
-                            "remaining_revision_rounds": max_revision_rounds - index,
-                            "recalled_memory": memory_context,
-                        }, suite, ledger, session.task_id,
-                    ))
-                },
-                "Lead is assessing worker output (round %d)" % index,
-            )["decision"]
-            lead_assessments.append(assessment)
-            final_assessment = assessment
-            requests = normalize_revision_requests(
-                assessment.get("revision_requests"), delegations,
+    def _role_components(self, run: "RunContext") -> List[dict]:
+        return [
+            component(
+                ComponentKind.LLM_AGENT, name,
+                token_budget=self._token_budget(name),
+                time_budget_seconds=self.default_time_budget,
+                tool_permissions=sorted(ROLE_PERMISSIONS[name]),
             )
-            if not requests or index >= max_revision_rounds:
-                if requests:
-                    stop_reason = (
-                        "revision-skipped-stability-profile"
-                        if max_revision_rounds == 0 else "revision-budget-exhausted"
-                    )
-                break
-            revisions = []
-            for request in requests:
-                original = next(
-                    item for item in delegations
-                    if item["assignment_id"] == request["assignment_id"]
-                )
-                revision = dict(original)
-                revision["run_id"] = "%d:%s" % (index + 1, request["assignment_id"])
-                revision["revision_round"] = index + 1
-                revision["lead_feedback"] = request["guidance"]
-                revision["required_evidence"] = request["required_evidence"]
-                revisions.append(revision)
-            revised = self._run_assignments(
-                session, suite, ledger, revisions, scanned["findings"], index + 1,
-                memory_context, available_skills,
-            )
-            for revision in revisions:
-                key = revision["run_id"]
-                result = revised[key]
-                revision_results[key] = result
-                worker_results[revision["assignment_id"]] = result
-                ledger.trace(
-                    "lead-session", "revision_completed",
-                    assignment_id=revision["assignment_id"],
-                    worker=revision["worker"], round=index + 1,
-                    status=result["status"],
-                )
-
-        candidates = candidates_from(rule_findings, worker_results)
-        candidate_findings_before_critic = len(candidates)
-        if "critic" in enabled and candidates:
-            judged = runner.run(
-                session.stage("critic"),
-                lambda: self._critic(
-                    session, suite, ledger, candidates,
-                    str(final_assessment.get("critic_objective", "")), memory_context,
-                ),
-                "Critic is challenging %d candidate finding(s)" % len(candidates),
-            )
-            candidates = restore_findings(judged["candidates"])
-            critic_decisions = judged["decisions"]
-        else:
-            critic_decisions = [
-                {"finding_index": index, "accepted": True, "objections": []}
-                for index in range(len(candidates))
-            ]
-
-        arbitrated = runner.run(
-            session.stage("arbitrate"),
-            lambda: {"decision": public_decision(self._finalize(
-                session, suite, ledger, candidates, critic_decisions,
-                worker_results, memory_context,
-            ))},
-            "Lead is arbitrating the final finding set",
-        )
-        lead_final = arbitrated["decision"]
-        lead_accepted = apply_lead_final(lead_final, candidates)
-        accepted, suggestions, publication_decisions = partition_publication(
-            rule_findings, candidates, lead_accepted, critic_decisions,
-            suite.repository_available, critic_required="critic" in enabled,
-            publish_unverified_suggestions=bool(
-                self.structured_config.get("publish_unverified_suggestions", True)
-            ),
-        )
-
-        roles = [
-            name for name in ("lead", "security", "correctness-reliability", "critic")
-            if name in enabled
+            for name in ("lead", "security", "correctness-reliability", "critic")
+            if name in run.enabled
         ]
-        collaboration = {
+
+    @staticmethod
+    def _collaboration(
+        run, planned, executed, lead_final, publication_decisions, critic_decisions,
+        scanner_count, before_critic, accepted_count, suggestions,
+    ) -> Dict[str, Any]:
+        delegations = planned["delegations"]
+        return {
             "protocol": "lead-workers",
-            "roles": roles,
+            "roles": [
+                name for name in ("lead", "security", "correctness-reliability", "critic")
+                if name in run.enabled
+            ],
             "lead": {
-                "delegation": delegated["decision"],
-                "assessments": lead_assessments,
+                "delegation": planned["lead_delegation"],
+                "assessments": executed["lead_assessments"],
                 "final": lead_final,
             },
             "assignments": delegations,
@@ -415,29 +485,19 @@ class AgenticReviewer(Reviewer):
                 name for assignment in delegations
                 for name in assignment.get("skills") or []
             }),
-            "worker_results": list(worker_results.values()),
-            "revision_results": list(revision_results.values()),
-            "scanner_findings": len(rule_findings),
-            "candidate_findings_before_critic": candidate_findings_before_critic,
-            "accepted_findings": len(accepted),
+            "worker_results": list(executed["worker_results"].values()),
+            "revision_results": list(executed["revision_results"].values()),
+            "scanner_findings": scanner_count,
+            "candidate_findings_before_critic": before_critic,
+            "accepted_findings": accepted_count,
             "suggested_findings": [item.to_dict() for item in suggestions],
             "suggestion_count": len(suggestions),
             "publication_decisions": publication_decisions,
             "critic_decisions": critic_decisions,
-            "stop_reason": stop_reason or "lead-final",
+            "stop_reason": executed["stop_reason"],
         }
-        components = scanned["components"] + [
-            component(
-                ComponentKind.LLM_AGENT, name,
-                token_budget=self._token_budget(name),
-                time_budget_seconds=self.default_time_budget,
-                tool_permissions=sorted(ROLE_PERMISSIONS[name]),
-            )
-            for name in roles
-        ]
-        return accepted, collaboration, components
 
-    # -- stage bodies ------------------------------------------------------
+    # -- node bodies -------------------------------------------------------
 
     def _scan(self, session: ReviewSession, ledger, scanners) -> Dict[str, Any]:
         findings, components = self._scan_findings(
@@ -449,9 +509,11 @@ class AgenticReviewer(Reviewer):
         }
 
     def _delegate(
-        self, session, suite, ledger, worker_roles, scanner_findings,
-        memory_context, available_skills, requested_skills,
+        self, session, run, scanner_findings, memory_context,
     ) -> Dict[str, Any]:
+        suite, ledger = run.suite, run.ledger
+        worker_roles, available_skills = run.workers, run.skills
+        requested_skills = run.requested_skills
         decision = self._run_lead(
             "delegate", {
                 **self._model_diff(
@@ -492,10 +554,10 @@ class AgenticReviewer(Reviewer):
         return {"delegations": delegations, "decision": public_decision(decision)}
 
     def _critic(
-        self, session, suite, ledger, candidates, objective, memory_context,
+        self, session, run, candidates, objective, memory_context,
     ) -> Dict[str, Any]:
         result = self._run_critic(
-            session.diff, candidates, objective, suite, ledger,
+            session.diff, candidates, objective, run.suite, run.ledger,
             session.task_id, memory_context,
         )
         kept, decisions = apply_critic(result, candidates)
@@ -504,9 +566,28 @@ class AgenticReviewer(Reviewer):
             "decisions": decisions,
         }
 
-    def _finalize(
-        self, session, suite, ledger, candidates, critic_decisions,
-        worker_results, memory_context,
+    def _assess(
+        self, session, run, delegations, worker_results, candidates,
+        index, max_rounds, memory_context,
+    ) -> Dict[str, Any]:
+        return self._run_lead(
+            "assess-workers", {
+                **self._model_diff(
+                    session.diff, session.task_id, "lead:assess-workers",
+                    focus_files=[item.path for item in candidates],
+                ),
+                "assignments": delegations,
+                "worker_results": list(worker_results.values()),
+                "candidate_findings": [item.to_dict() for item in candidates],
+                "revision_round": index,
+                "remaining_revision_rounds": max_rounds - index,
+                "recalled_memory": memory_context,
+            }, run.suite, run.ledger, session.task_id,
+        )
+
+    def _arbitrate(
+        self, session, run, candidates, critic_decisions, worker_results,
+        memory_context,
     ) -> Dict[str, Any]:
         decision = self._run_lead(
             "finalize", {
@@ -526,7 +607,7 @@ class AgenticReviewer(Reviewer):
                     "explicitly and prefer changed-line tool evidence."
                 ),
                 "recalled_memory": memory_context,
-            }, suite, ledger, session.task_id,
+            }, run.suite, run.ledger, session.task_id,
         )
         if "accepted_finding_indices" not in decision:
             decision["accepted_finding_indices"] = [
@@ -536,15 +617,15 @@ class AgenticReviewer(Reviewer):
         return decision
 
     def _run_assignments(
-        self, session: ReviewSession, suite, ledger, assignments, scanner_findings,
-        revision_round, memory_context, available_skills,
+        self, session: ReviewSession, run, assignments, scanner_findings,
+        revision_round, memory_context,
     ) -> Dict[str, dict]:
-        """One stage per assignment: a restart re-runs only the workers that died."""
+        """One sub-node per assignment: a restart re-runs only the worker that died."""
         results: Dict[str, dict] = {}
         pending = []
         for assignment in assignments:
             run_id = str(assignment.get("run_id") or assignment["assignment_id"])
-            done = session.runner.output(session.stage("work:%s" % run_id))
+            done = session.runtime.checkpoint(session.sub(EXECUTING, "work:%s" % run_id))
             if done is not None:
                 results[run_id] = done["result"]
             else:
@@ -553,11 +634,11 @@ class AgenticReviewer(Reviewer):
             return results
 
         def execute(run_id, assignment):
-            return session.runner.run(
-                session.stage("work:%s" % run_id),
+            return session.runtime.run(
+                session.sub(EXECUTING, "work:%s" % run_id),
                 lambda: {"result": self._worker_result(
-                    session, suite, ledger, assignment, run_id, scanner_findings,
-                    revision_round, memory_context, available_skills,
+                    session, run, assignment, run_id, scanner_findings,
+                    revision_round, memory_context,
                 )},
                 "%s is working on %s" % (assignment["worker"], run_id),
                 retries=0,
@@ -573,11 +654,11 @@ class AgenticReviewer(Reviewer):
         return results
 
     def _worker_result(
-        self, session, suite, ledger, assignment, run_id, scanner_findings,
-        revision_round, memory_context, available_skills,
+        self, session, run, assignment, run_id, scanner_findings,
+        revision_round, memory_context,
     ) -> dict:
         """Always returns a result record: a failed worker is data, not an outage."""
-        parsed = session.parsed
+        parsed, ledger, available_skills = session.parsed, run.ledger, run.skills
         validated_skill_names = {
             name for name in assignment.get("skills") or []
             if name in (available_skills or {})
@@ -585,8 +666,7 @@ class AgenticReviewer(Reviewer):
         }
         try:
             raw_result = self._run_worker(
-                session, suite, ledger, assignment, scanner_findings,
-                memory_context, available_skills,
+                session, run, assignment, scanner_findings, memory_context,
             )
             findings = parse_findings(
                 raw_result, parsed, assignment["worker"], validated_skill_names,
@@ -626,10 +706,10 @@ class AgenticReviewer(Reviewer):
         return result
 
     def _run_worker(
-        self, session, suite, ledger, assignment, scanner_findings,
-        memory_context, available_skills,
+        self, session, run, assignment, scanner_findings, memory_context,
     ):
-        parsed = session.parsed
+        parsed, suite, ledger = session.parsed, run.suite, run.ledger
+        available_skills = run.skills
         worker = assignment["worker"]
         selected_skills = [
             available_skills[name]

@@ -1,13 +1,14 @@
-"""Session state: one append-only event log plus the folds that read it."""
-from .events import Event, EventKind, EventLog, utc_now
+"""Session state: one append-only checkpoint log plus the folds that read it."""
+from .checkpoint import Checkpoint, CheckpointKind, CheckpointLog, utc_now
 from .ledger import ExecutionLedger, ModelCall, ToolCall
 from .projections import (
-    COMPLETED, FAILED, RUNNING, completed, progress, report, stage_output,
-    stage_state, task_state, trace,
+    COMPLETED, EXECUTING, FAILED, PLANNING, REPORT_NODE, REVIEWING, RUNNING,
+    completed, node_output, node_state, progress, report, task_state, trace,
 )
 
 __all__ = [
-    "COMPLETED", "Event", "EventKind", "EventLog", "ExecutionLedger", "FAILED",
-    "ModelCall", "RUNNING", "ToolCall", "completed", "progress", "report",
-    "stage_output", "stage_state", "task_state", "trace", "utc_now",
+    "COMPLETED", "Checkpoint", "CheckpointKind", "CheckpointLog", "EXECUTING",
+    "ExecutionLedger", "FAILED", "ModelCall", "PLANNING", "REPORT_NODE",
+    "REVIEWING", "RUNNING", "ToolCall", "completed", "node_output",
+    "node_state", "progress", "report", "task_state", "trace", "utc_now",
 ]

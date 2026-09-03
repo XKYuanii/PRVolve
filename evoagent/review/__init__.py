@@ -1,1 +1,1 @@
-"""Review orchestration: the pipeline, its stages, and the reviewers it drives."""
+"""Review orchestration: the harness, its runtime, and the reviewers it drives."""

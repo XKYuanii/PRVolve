@@ -12,7 +12,7 @@ PRVolve 面向研发流程中的 Pull Request，将本地规则、仓库级工�
 
 - **证据驱动的多 Agent 审查**：Lead 负责任务拆分与综合，Security 和 Correctness/Reliability 并行分析，Critic 独立寻找反例并复核结论。
 - **真实仓库上下文**：按角色授权全仓搜索、文件读取、符号与调用关系、测试定位、AST、Git 历史、静态扫描和管理员配置的项目检查。
-- **单一事实源的可恢复执行**：一条 append-only 事件日志记录全部进度、模型调用与工具调用；任务状态、Run Trace、成本账本和报告都是它的投影。断点续跑精确到单个 Worker Assignment。
+- **单一事实源的可恢复执行**：一条 append-only 的 `checkpoints` 日志记录全部节点进度、模型调用与工具调用；任务状态、Run Trace、成本账本和报告都是它的投影，没有第二套恢复机制。断点续跑精确到单个 Worker Assignment。
 - **受控修复**：在线修复使用 LLM Unified Patch；补丁经过路径、AST/CST、编译和测试门禁后，只写入独立分支和 Draft PR。代码库同时保留确定性 SafeFixer，用于有限规则的安全转换。
 - **Prompt / Skill 进化**：将确认后的误报、漏报、坏修复和执行异常回流为候选版本，通过 Validation、Holdout、安全与非退化门禁后再激活或回滚。
 
@@ -22,47 +22,63 @@ PRVolve 面向研发流程中的 Pull Request，将本地规则、仓库级工�
 PR Webhook / JSON API
           │
           ▼
-   ReviewService                                    serving/
+   ReviewService                                     serving/
           │
           ▼
-   ReviewPipeline   parse → review → finalize       review/pipeline.py
-          │         每个阶段完成即写入事件日志
+   ReviewHarness ── AgentRuntime                      review/
+   （节点调度 · 执行预算 · 节点重试 · 任务取消 · Checkpoint 续跑）
           │
-          ├── DiffParser + Local Rules              core/ + review/reviewers.py
-          │
-          └── AgenticReviewer                       review/agentic.py
-               │  子阶段写入同一条日志，同一套续跑规则
-               │  scan → delegate → work:<id> → assess-N → critic → arbitrate
-               │
-               └── AgentLoop（无领域知识的工具循环）  agents/loop.py
-                    ├── Security Worker
-                    ├── Correctness/Reliability Worker
-                    └── Critic Worker
-                             │
-                             ▼
-                   Evidence & Finding Gates         core/gates.py
-                             │
-                  ┌──────────┴──────────┐
-                  ▼                     ▼
-           Findings / Suggestions   JSON / Markdown
-                                           │
-                                           └── Comment / Draft Fix PR
+┌─────────▼───────────────────────────────────────┐
+│ 1. planning                          PLANNING   │
+│    ├─ 解析 Diff                                  │
+│    ├─ Scanner 确定性扫描                          │
+│    ├─ 准备仓库 / Context                          │
+│    └─ Lead 拆任务生成 Assignment                  │
+└─────────┬───────────────────────────────────────┘
+┌─────────▼───────────────────────────────────────┐
+│ 2. executing                        EXECUTING   │
+│    ├─ Worker 并行执行（各自一个子节点）            │
+│    ├─ 收集 WorkerResult                          │
+│    ├─ Lead assess                               │
+│    └─ 必要时最多 N 轮 revision                    │
+└─────────┬───────────────────────────────────────┘
+┌─────────▼───────────────────────────────────────┐
+│ 3. reviewing                        REVIEWING   │
+│    ├─ Critic 独立复核（隐藏候选来源）              │
+│    ├─ Lead final / arbitrate                    │
+│    ├─ FindingGate                               │
+│    └─ 生成 ReviewReport                          │
+└─────────┬───────────────────────────────────────┘
+          ▼
+       SUCCESS
 
-           所有阶段、模型调用、工具调用 ──▶ session_events（唯一真实进度）
+  每个节点 · 每次模型调用 · 每次工具调用 ──▶ checkpoints（append-only）
                                               │
-                        TaskState · Run Trace · 成本账本 · 报告 = 它的投影
+                     TaskState · Run Trace · 成本账本 · 报告 = 它的投影
 ```
+
+**节点边界的划分规则**：*参与收敛循环的工作属于拥有该循环的节点；循环之外的一次性判定属于下一个节点。* 这就是 revision 在 `executing`、Critic 在 `reviewing` 的原因，也是三个节点都承载真实成本的原因——checkpoint 只有落在有成本的地方才有意义。
+
+单次评审的实测分布（同一组 fake 模型，共 8 次调用）：
+
+| 节点 | TaskState | 模型调用 | 工具调用 | 子节点 |
+| --- | --- | ---: | ---: | --- |
+| `planning` | PLANNING | 1 | 2 | `scan`、`delegate` |
+| `executing` | EXECUTING | 5 | 0 | `work:<assignment>`、`assess-N` |
+| `reviewing` | REVIEWING | 2 | 1 | `critic`、`arbitrate` |
+
+Lead 在三个节点里各出现一次，分别负责**打开**（delegate）、**收敛**（assess）、**关闭**（finalize）工作。节点是恢复维度，角色是协作维度，两者正交：每次 Lead 激活都是一个全新的无状态 `AgentLoop`，上下文显式传入，因此节点边界干净地落在两次激活之间，恢复时不需要序列化任何对话状态。
 
 ## 模块结构
 
 | 目录 | 职责 | 依赖方向 |
 | --- | --- | --- |
 | `core/` | 领域类型与纯函数（Finding、Diff 解析、门禁、Rule ID 策略） | 叶子，不依赖任何内部模块 |
-| `session/` | append-only 事件日志与全部投影（状态、Trace、成本账本） | 只依赖 `core/` |
+| `session/` | append-only Checkpoint 日志与全部投影（状态、Trace、成本账本） | 只依赖 `core/` |
 | `llm/` | 模型客户端与上下文预算管理 | `core/`、`session/` |
 | `tools/` | 工具目录与参数校验、仓库工具套件、Agent Skill | `core/`、`session/` |
 | `agents/` | 与领域无关的 Agent 循环、角色 Prompt、输出解析、记忆 | `llm/`、`tools/`、`session/` |
-| `review/` | 编排：Pipeline、Stage 运行器、Agentic 协议、合并与发布判定 | 以上全部 |
+| `review/` | 编排：ReviewHarness、AgentRuntime、Agentic 协议、合并与发布判定 | 以上全部 |
 | `store/` | SQLite / PostgreSQL 持久化，不含业务规则 | `core/`、`session/` |
 | `serving/` | HTTP、任务队列、租户、GitHub 接入、可观测性 | 以上全部 |
 | `evolution/`、`eval/` | 离线进化与评测，主链路的消费者 | 以上全部 |
@@ -292,8 +308,8 @@ Skill 版本、进化评测、灰度发布、告警、审计与死信队列接�
 
 ## 持久化、队列与可观测性
 
-- 运行进度写入 `session_events` 一张 append-only 表，`(task_id, seq)` 为主键；`tasks` 表的 `state` / `report_json` 是同事务维护的读模型，仅服务列表与看板查询。
-- 断点续跑读取该日志并跳过已完成阶段。阶段名分层（`review.work:security-1`），因此 Pipeline 与 Agentic Reviewer 用同一套机制在各自粒度上续跑，不存在第二套 Checkpoint 格式。
+- 运行进度写入 `checkpoints` 一张 append-only 表，主键 `(task_id, seq)`——是追加的事实，不是可覆盖的每节点一行；`tasks` 表的 `state` / `report_json` 是同事务维护的读模型，仅服务列表与看板查询。
+- 断点续跑读取该日志并跳过已完成节点。节点名分层（`executing.work:security-1`），因此 Harness 与 Agentic Reviewer 用同一套机制在各自粒度上续跑，不存在第二套 Checkpoint 格式。
 - 本地模式使用 SQLite 和进程内任务执行。
 - 生产模式使用 PostgreSQL 与 Redis Streams，支持 ACK、Worker Lease、指数退避、重试和死信队列。
 - Working、Episodic、Semantic、Procedural 四类记忆按租户和仓库隔离，并支持归档、召回和过期清理。

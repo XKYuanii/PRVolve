@@ -4,11 +4,11 @@ import time
 import unittest
 
 from evoagent.serving.auth import AuthManager
-from evoagent.review.pipeline import ReviewPipeline
+from evoagent.review.harness import ReviewHarness
 from evoagent.review.reviewers import LocalRuleReviewer
 from evoagent.serving.rollout import ReleaseManager
 from evoagent.serving.service import ReviewService
-from evoagent.session.events import EventLog
+from evoagent.session.checkpoint import CheckpointLog
 from evoagent.session.projections import progress
 from evoagent.store.sqlite import TaskStore
 from evoagent.serving.task_queue import TaskQueue
@@ -57,7 +57,7 @@ class ProductionFeatureTests(unittest.TestCase):
 
         self.assertEqual(["a"], [item["task_id"] for item in cases])
 
-    def test_failed_run_resumes_after_the_last_completed_stage(self):
+    def test_failed_run_resumes_after_the_last_completed_node(self):
         class BrokenReviewer:
             name = "broken"
 
@@ -66,18 +66,18 @@ class ProductionFeatureTests(unittest.TestCase):
 
         self.store.create("task", "org/repo", 1, {})
         with self.assertRaises(RuntimeError):
-            ReviewPipeline(
-                self.store, BrokenReviewer(), stage_retries=0
+            ReviewHarness(
+                self.store, BrokenReviewer(), node_retries=0
             ).run("task", "org/repo", 1, DIFF)
         failed_task = self.store.get("task")
         self.assertEqual("temporary provider failure", failed_task["error"])
         self.assertFalse(self.store.list_failure_cases(True)[0]["resolved"])
-        stages = progress(EventLog.load(self.store, "task"))
-        self.assertEqual("completed", stages["parse"]["status"])
-        self.assertEqual("failed", stages["review"]["status"])
+        nodes = progress(CheckpointLog.load(self.store, "task"))
+        self.assertEqual("completed", nodes["planning"]["status"])
+        self.assertEqual("failed", nodes["executing"]["status"])
 
-        report = ReviewPipeline(
-            self.store, LocalRuleReviewer(), stage_retries=0
+        report = ReviewHarness(
+            self.store, LocalRuleReviewer(), node_retries=0
         ).resume("task", "org/repo", 1, DIFF)
         self.assertEqual("high", report.risk)
         recovered_task = self.store.get("task")

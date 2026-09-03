@@ -2,7 +2,7 @@ import os
 import tempfile
 import unittest
 
-from evoagent.review.pipeline import ReviewPipeline
+from evoagent.review.harness import ReviewHarness
 from evoagent.review.reviewers import LocalRuleReviewer
 from evoagent.store.sqlite import TaskStore
 
@@ -20,7 +20,7 @@ class HarnessTests(unittest.TestCase):
         task_id = "test-task"
         self.store.create(task_id, "demo/repo", 7, {"source": "test"})
         diff = "--- a/x.py\n+++ b/x.py\n@@ -1 +1 @@\n-old\n+eval(value)\n"
-        report = ReviewPipeline(self.store, LocalRuleReviewer()).run(task_id, "demo/repo", 7, diff)
+        report = ReviewHarness(self.store, LocalRuleReviewer()).run(task_id, "demo/repo", 7, diff)
         task = self.store.get(task_id)
         self.assertEqual("SUCCESS", task["state"])
         self.assertEqual(["PLANNING", "EXECUTING", "REVIEWING", "SUCCESS"], [x["state"] for x in task["trace"]])
@@ -30,7 +30,7 @@ class HarnessTests(unittest.TestCase):
         task_id = "bad-task"
         self.store.create(task_id, "demo/repo", None, {"source": "test"})
         with self.assertRaises(ValueError):
-            ReviewPipeline(self.store, LocalRuleReviewer()).run(task_id, "demo/repo", None, "not a diff")
+            ReviewHarness(self.store, LocalRuleReviewer()).run(task_id, "demo/repo", None, "not a diff")
         self.assertEqual("FAILED", self.store.get(task_id)["state"])
 
 

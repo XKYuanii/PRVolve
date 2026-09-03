@@ -1,25 +1,26 @@
-"""The contract between the pipeline and whichever reviewer it drives.
+"""The contract between the harness and whichever reviewer it drives.
 
 A reviewer that only needs the diff implements ``review``. A reviewer that runs
-its own resumable sub-stages - the agentic one - implements ``review_session``
-and gets the session: the same log and the same stage runner the pipeline uses,
-so its progress is recorded the same way and resumes under the same rule.
+the full agent protocol implements ``plan``/``execute``/``judge``, one per
+harness node, and gets the session: the same checkpoint log and the same runtime
+the harness uses, so its own sub-nodes are recorded the same way and resume
+under the same rule.
 """
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional
 
-from typing import Any as _Any  # noqa: F401  (kept for the type alias below)
-
 from ..core.diff_parser import ParsedDiff
 from ..core.models import Finding, Severity
 from ..session import projections
-from ..session.events import EventLog
-from .stages import StageRunner
+from ..session.checkpoint import CheckpointLog
+from .runtime import AgentRuntime
 
 
-#: Re-exported so review code names stages without importing projections; the
+#: Re-exported so review code names nodes without importing projections; the
 #: single definition lives there, next to the lifecycle mapping that reads it.
-PARSE, REVIEW, FINALIZE = projections.PARSE, projections.REVIEW, projections.FINALIZE
+PLANNING = projections.PLANNING
+EXECUTING = projections.EXECUTING
+REVIEWING = projections.REVIEWING
 
 
 @dataclass
@@ -30,13 +31,13 @@ class ReviewSession:
     tenant_id: str
     diff: str
     parsed: ParsedDiff
-    log: EventLog
-    runner: StageRunner
+    log: CheckpointLog
+    runtime: AgentRuntime
     task_input: Dict[str, Any] = field(default_factory=dict)
 
-    def stage(self, name: str) -> str:
-        """Namespace a reviewer stage under the pipeline stage that owns it."""
-        return "%s.%s" % (REVIEW, name)
+    def sub(self, node: str, name: str) -> str:
+        """Namespace a reviewer sub-node under the harness node that owns it."""
+        return "%s.%s" % (node, name)
 
 
 @dataclass
@@ -47,18 +48,34 @@ class ReviewOutcome:
     summary: Dict[str, Any] = field(default_factory=dict)
 
 
-def outcome_to_stage(outcome: "ReviewOutcome") -> Dict[str, Any]:
-    """The one stored form of a reviewer's result."""
+def finding_from_dict(value: Dict[str, Any]) -> Finding:
+    item = dict(value)
+    item["severity"] = Severity(item["severity"])
+    return Finding(**item)
+
+
+def summary_from_report(report: Dict[str, Any]) -> Dict[str, Any]:
+    """Invert the merge the harness does when it builds a report.
+
+    The report is the one stored form; a caller that only has a task id gets its
+    run summary back from there rather than from a second stored copy.
+    """
+    execution = dict(report.get("execution") or {})
     return {
-        "findings": [item.to_dict() for item in outcome.findings],
-        "summary": outcome.summary,
+        "run_mode": dict(report.get("run_mode") or {}),
+        "components": list(report.get("components") or []),
+        "collaboration": dict(report.get("collaboration") or {}),
+        "suggested_findings": list(report.get("suggestions") or []),
+        "execution": execution,
+        "gates": dict(execution.get("gates") or {}),
+        "rejected_findings": list(execution.get("rejected_findings") or []),
+        "repository_context": dict(execution.get("repository_context") or {}),
+        "context_management": dict(execution.get("context_management") or {}),
     }
 
 
-def outcome_from_stage(stored: Dict[str, Any]) -> "ReviewOutcome":
-    findings = []
-    for value in stored.get("findings") or []:
-        item = dict(value)
-        item["severity"] = Severity(item["severity"])
-        findings.append(Finding(**item))
-    return ReviewOutcome(findings, dict(stored.get("summary") or {}))
+def outcome_from_report(report: Dict[str, Any]) -> ReviewOutcome:
+    return ReviewOutcome(
+        [finding_from_dict(item) for item in report.get("findings") or []],
+        summary_from_report(report),
+    )

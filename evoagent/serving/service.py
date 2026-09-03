@@ -11,13 +11,13 @@ from ..evolution.candidates import RootCauseEvolutionGenerator
 from ..review.fixer import SafeFixer
 from ..review.patching import SuggestionOnlyFixer, VerifiedPatchFixer
 from ..serving.github import GitHubAppAuthenticator, GitHubClient
-from ..review.pipeline import ReviewPipeline
+from ..review.harness import ReviewHarness
 from ..serving.metrics import metrics
 from ..llm.client import JsonChatClient
 from ..core.modes import RunMode
 from ..agents.memory import MemoryManager
 from ..core.models import TaskState
-from ..session.events import EventKind, EventLog
+from ..session.checkpoint import CheckpointKind, CheckpointLog
 from ..serving.observability import AlertManager, Observability
 from ..store.postgres import create_store
 from ..serving.report import to_markdown
@@ -75,7 +75,7 @@ class ReviewService:
             ) if self.llm_config else None
         )
         self.reviewer = self._build_mode_router()
-        self.harness = ReviewPipeline(
+        self.harness = ReviewHarness(
             self.store, self.reviewer, settings.timeout_seconds,
             observability=self.observability,
         )
@@ -199,7 +199,7 @@ class ReviewService:
         self.registry.reload()
         skills = self.registry.list()
         self.reviewer = self._build_mode_router()
-        self.harness = ReviewPipeline(
+        self.harness = ReviewHarness(
             self.store, self.reviewer, self.settings.timeout_seconds,
             observability=self.observability,
         )
@@ -390,8 +390,8 @@ class ReviewService:
         if task and task.get("state") not in {
             TaskState.SUCCESS.value, TaskState.FAILED.value, TaskState.CANCELLED.value,
         }:
-            EventLog.load(self.store, task_id).append(
-                EventKind.TASK_FAILED,
+            CheckpointLog.load(self.store, task_id).append(
+                CheckpointKind.TASK_FAILED,
                 message="Task entered the dead-letter queue: %s" % error,
                 error=error,
             )
