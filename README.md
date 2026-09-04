@@ -323,6 +323,10 @@ python -m unittest discover -s tests -v
 
 评测脚本位于 [scripts](scripts)，版本化数据集和人工裁决位于 [benchmarks](benchmarks)。历史报告应优先使用缓存重评分脚本处理标签修订，避免在人工裁决阶段意外产生新的模型调用。
 
+Agentic 模式中的规则 scanner 是不向 Lead/Worker 暴露结果的并行发布兜底，不是 Agent 的提示或任务来源。评测必须固定 scanner catalog（报告记录其 SHA-256），并分别报告 Worker 独立形成 Finding 的召回、Worker 独立可发布召回、scanner 独有发现、scanner 发布兜底和最终产品召回；不得把同一数据集的漏检改写成 scanner 规则后，再把新的产品召回宣称为模型能力。
+
+缺陷定位与 CWE 分类分开评分。`target_detection_recall` 表示已覆盖已知审查位置，`taxonomy_accuracy_on_detected_targets` 表示这些命中中 CWE 也正确的比例；原 `precision` / `recall` / `f1` 继续保留为位置与 CWE 都一致的严格兼容指标。目标位置命中不等于完整语义裁决，也不能用于估算未穷举标签数据集的精确率。
+
 ## 已知边界
 
 - 当前主要评测语言是 Python；仓库检索和通用 Diff 分析可用于其他语言，但语言专用 AST、规则和修复能力尚未建立同等基线。

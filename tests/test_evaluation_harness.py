@@ -9,6 +9,7 @@ from evoagent.eval.harness import (
     dataset_fingerprint,
     load_jsonl,
     one_to_one_match,
+    one_to_one_target_match,
 )
 from evoagent.core.models import Finding, Severity
 
@@ -48,6 +49,21 @@ class EndToEndEvaluationTests(unittest.TestCase):
         ]
         matches = one_to_one_match(expected, predicted)
         self.assertEqual(1, len(matches))
+
+    def test_target_matching_does_not_confuse_cwe_with_defect_detection(self):
+        expected = [{
+            "path": "src/a.py", "start_line": 10, "end_line": 10,
+            "cwe": "CWE-248", "severity": "high",
+        }]
+        prediction = Finding(
+            "CWE-476", Severity.HIGH, "Key lookup can fail",
+            "The removed membership guard allows a missing key to reach lookup.",
+            "src/a.py", 10, "mapping[key]", "Restore the membership guard.",
+            "Cover a missing key.", 0.9,
+        )
+
+        self.assertEqual([], one_to_one_match(expected, [prediction]))
+        self.assertEqual(1, len(one_to_one_target_match(expected, [prediction])))
 
     def test_dataset_round_trip_has_stable_fingerprint(self):
         cases = generate_controlled_pr_cases()

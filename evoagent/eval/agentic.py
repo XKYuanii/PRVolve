@@ -1,5 +1,7 @@
 """Product-backed agentic evaluation suite for labelled PRs."""
 from collections import Counter
+import hashlib
+import json
 import random
 import time
 from typing import Any, Callable, Dict, List, Mapping, Optional
@@ -12,6 +14,7 @@ from ..eval.harness import (
     EndToEndEvaluationHarness,
     dataset_fingerprint,
     one_to_one_match,
+    one_to_one_target_match,
 )
 from ..core.finding_policy import normalize_rule_id
 from ..llm.client import JsonChatClient
@@ -239,6 +242,24 @@ class ProductArmReviewer:
         }
 
     def evaluation_config(self) -> dict:
+        catalog = []
+        for family, rules in (
+            ("local", self.router.rules.RULES),
+            ("diff", self.router.rules.DIFF_RULES),
+            ("context", ContextRuleReviewer.RULES),
+        ):
+            for rule in rules:
+                values = rule if isinstance(rule, tuple) else (rule,)
+                catalog.append([
+                    family,
+                    *[
+                        str(getattr(value, "value", getattr(value, "pattern", value)))
+                        for value in values[:3]
+                    ],
+                ])
+        catalog_sha256 = hashlib.sha256(json.dumps(
+            catalog, ensure_ascii=False, sort_keys=True, separators=(",", ":"),
+        ).encode("utf-8")).hexdigest()
         return {
             "arm": self.arm,
             "mode": ARM_TOPOLOGY[self.arm]["mode"],
@@ -249,6 +270,9 @@ class ProductArmReviewer:
                 + len(ContextRuleReviewer.RULES)
             ),
             "scanner_findings_seed_agents": False,
+            "scanner_orchestration": "parallel-unseeded-publication-safety-net",
+            "scanner_catalog_policy": "freeze-per-evaluation",
+            "scanner_catalog_sha256": catalog_sha256,
             "max_revision_rounds": self.router._max_revision_rounds(),
             "publish_unverified_suggestions": False,
             "total_token_budget_per_pr": self.total_token_budget,
@@ -298,6 +322,88 @@ class ProductionEvaluationHarness(EndToEndEvaluationHarness):
             except (KeyError, TypeError, ValueError):
                 continue
         return findings
+
+    def _score_capability_lanes(self, result, expected, agentic_summary):
+        """Keep model ability separate from the scanner-backed product result."""
+        worker_findings = merge_findings(self._restore_findings([
+            finding
+            for worker in agentic_summary.get("worker_results") or []
+            if isinstance(worker, dict)
+            for finding in worker.get("findings") or []
+        ]))
+        scanner_findings = merge_findings(self._restore_findings(
+            agentic_summary.get("scanner_finding_details") or []
+        ))
+        confirmed_worker_counts = Counter()
+        for decision in agentic_summary.get("publication_decisions") or []:
+            if not isinstance(decision, dict) or decision.get("disposition") != "confirmed":
+                continue
+            source = str(decision.get("source") or "")
+            if source.startswith(("local-rule-scanner", "declarative-scanner:")):
+                continue
+            # Publication decisions carry both values after a Critic taxonomy
+            # correction. Attribute the accepted result by its final rule id.
+            rule_id = normalize_rule_id(decision.get("rule_id") or "")
+            confirmed_worker_counts[(source, rule_id)] += 1
+        published_worker_findings = []
+        for finding in worker_findings:
+            key = (str(finding.source or ""), normalize_rule_id(finding.rule_id))
+            if confirmed_worker_counts[key] > 0:
+                published_worker_findings.append(finding)
+                confirmed_worker_counts[key] -= 1
+
+        worker_strict = one_to_one_match(
+            expected, worker_findings, self.line_tolerance
+        )
+        worker_targets = one_to_one_target_match(
+            expected, worker_findings
+        )
+        published_worker_strict = one_to_one_match(
+            expected, published_worker_findings, self.line_tolerance
+        )
+        published_worker_targets = one_to_one_target_match(
+            expected, published_worker_findings
+        )
+        scanner_strict = one_to_one_match(
+            expected, scanner_findings, self.line_tolerance
+        )
+        scanner_targets = one_to_one_target_match(
+            expected, scanner_findings
+        )
+        worker_strict_expected = {item.expected_index for item in worker_strict}
+        worker_target_expected = {item.expected_index for item in worker_targets}
+        published_worker_strict_expected = {
+            item.expected_index for item in published_worker_strict
+        }
+        published_worker_target_expected = {
+            item.expected_index for item in published_worker_targets
+        }
+        scanner_strict_expected = {item.expected_index for item in scanner_strict}
+        scanner_target_expected = {item.expected_index for item in scanner_targets}
+
+        result.update({
+            "worker_formal_predictions": len(worker_findings),
+            "worker_formal_strict_tp": len(worker_strict),
+            "worker_formal_target_tp": len(worker_targets),
+            "worker_published_predictions": len(published_worker_findings),
+            "worker_published_strict_tp": len(published_worker_strict),
+            "worker_published_target_tp": len(published_worker_targets),
+            "scanner_predictions": len(scanner_findings),
+            "scanner_strict_tp": len(scanner_strict),
+            "scanner_target_tp": len(scanner_targets),
+            "scanner_unique_strict_tp": len(
+                scanner_strict_expected - worker_strict_expected
+            ),
+            "scanner_unique_target_tp": len(
+                scanner_target_expected - worker_target_expected
+            ),
+            "scanner_publication_rescue_strict_tp": len(
+                scanner_strict_expected - published_worker_strict_expected
+            ),
+            "scanner_publication_rescue_target_tp": len(
+                scanner_target_expected - published_worker_target_expected
+            ),
+        })
 
     @staticmethod
     def _targeted_labels(case):
@@ -359,7 +465,8 @@ class ProductionEvaluationHarness(EndToEndEvaluationHarness):
     def _score_formal(self, result, case, findings):
         targeted = self._targeted_labels(case)
         labelled_prediction_indices = {
-            int(item["predicted_index"]) for item in result.get("matches") or []
+            int(item["predicted_index"])
+            for item in result.get("target_matches") or []
         }
         adjudication = [
             {
@@ -367,9 +474,12 @@ class ProductionEvaluationHarness(EndToEndEvaluationHarness):
                 "verdict": "required",
                 "source": "expected_findings",
                 "expected_index": int(item["expected_index"]),
-                "note": "matched a trusted labelled review finding",
+                "note": (
+                    "covered a trusted labelled review target; taxonomy is scored "
+                    "separately"
+                ),
             }
-            for item in result.get("matches") or []
+            for item in result.get("target_matches") or []
         ]
         remaining = [
             (index, finding) for index, finding in enumerate(findings)
@@ -440,7 +550,8 @@ class ProductionEvaluationHarness(EndToEndEvaluationHarness):
             match.predicted_index for match in required_matches
         }
         formal_expected = {
-            int(item["expected_index"]) for item in result.get("matches") or []
+            int(item["expected_index"])
+            for item in result.get("target_matches") or []
         }
         adjudication = []
         for match in required_matches:
@@ -539,6 +650,7 @@ class ProductionEvaluationHarness(EndToEndEvaluationHarness):
         )
         suggestions = self._restore_findings(result.get("suggested_findings") or [])
         matches = one_to_one_match(expected, findings, self.line_tolerance)
+        target_matches = one_to_one_target_match(expected, findings)
         targeted = self._targeted_labels(case)
         unmatched = len(findings) - len(matches)
         result.update({
@@ -547,6 +659,10 @@ class ProductionEvaluationHarness(EndToEndEvaluationHarness):
             "tp": len(matches),
             "fp": len(findings) - len(matches),
             "fn": len(expected) - len(matches),
+            "target_tp": len(target_matches),
+            "target_fn": len(expected) - len(target_matches),
+            "taxonomy_hits": len(matches),
+            "taxonomy_misses": len(target_matches) - len(matches),
             "severity_hits": 0,
             "high_total": sum(
                 str(item["severity"]).lower() in {"high", "critical"}
@@ -557,6 +673,14 @@ class ProductionEvaluationHarness(EndToEndEvaluationHarness):
             "expected_findings": expected,
             "predicted_findings": [item.to_dict() for item in findings],
             "matches": [],
+            "target_matches": [{
+                "expected_index": match.expected_index,
+                "predicted_index": match.predicted_index,
+                "path": findings[match.predicted_index].path,
+                "line": findings[match.predicted_index].line,
+                "rule_id": findings[match.predicted_index].rule_id,
+                "location_distance": match.location_distance,
+            } for match in target_matches],
             "invalid_comments": 0 if targeted else unmatched,
             "formal_invalid_findings": 0 if targeted else unmatched,
             "formal_unjudged_findings": unmatched if targeted else 0,
@@ -596,6 +720,9 @@ class ProductionEvaluationHarness(EndToEndEvaluationHarness):
                 "location_distance": match.location_distance,
             })
         self._score_formal(result, case, findings)
+        self._score_capability_lanes(
+            result, expected, result.get("agentic_summary") or {}
+        )
         return self._score_suggestions(result, case, findings, suggestions)
 
     def _run_case(self, reviewer, case):
@@ -664,6 +791,19 @@ class ProductionEvaluationHarness(EndToEndEvaluationHarness):
             "suggestion_adjudication": [],
             "incremental_suggestion_tp": 0,
             "combined_tp_after_verification": result["tp"],
+            "worker_formal_predictions": 0,
+            "worker_formal_strict_tp": 0,
+            "worker_formal_target_tp": 0,
+            "worker_published_predictions": 0,
+            "worker_published_strict_tp": 0,
+            "worker_published_target_tp": 0,
+            "scanner_predictions": 0,
+            "scanner_strict_tp": 0,
+            "scanner_target_tp": 0,
+            "scanner_unique_strict_tp": 0,
+            "scanner_unique_target_tp": 0,
+            "scanner_publication_rescue_strict_tp": 0,
+            "scanner_publication_rescue_target_tp": 0,
         })
         if result["execution_success"]:
             findings = recording.findings
@@ -697,6 +837,9 @@ class ProductionEvaluationHarness(EndToEndEvaluationHarness):
             summary_reader = getattr(reviewer, "evaluation_summary", None)
             if summary_reader:
                 result["agentic_summary"] = summary_reader() or {}
+                self._score_capability_lanes(
+                    result, expected, result["agentic_summary"]
+                )
                 failed_workers = [
                     item for item in result["agentic_summary"].get("worker_results") or []
                     if isinstance(item, dict) and item.get("status") == "failed"
@@ -737,6 +880,19 @@ class ProductionEvaluationHarness(EndToEndEvaluationHarness):
             "formal_useful_findings": 0,
             "targeted_label_cases": 0,
             "worker_failures": 0, "degraded_cases": 0,
+            "worker_formal_predictions": 0,
+            "worker_formal_strict_tp": 0,
+            "worker_formal_target_tp": 0,
+            "worker_published_predictions": 0,
+            "worker_published_strict_tp": 0,
+            "worker_published_target_tp": 0,
+            "scanner_predictions": 0,
+            "scanner_strict_tp": 0,
+            "scanner_target_tp": 0,
+            "scanner_unique_strict_tp": 0,
+            "scanner_unique_target_tp": 0,
+            "scanner_publication_rescue_strict_tp": 0,
+            "scanner_publication_rescue_target_tp": 0,
         })
         return values
 
@@ -758,6 +914,14 @@ class ProductionEvaluationHarness(EndToEndEvaluationHarness):
             "formal_unjudged_findings", "formal_adjudicated",
             "formal_useful_findings",
             "worker_failures",
+            "worker_formal_predictions", "worker_formal_strict_tp",
+            "worker_formal_target_tp", "worker_published_predictions",
+            "worker_published_strict_tp", "worker_published_target_tp",
+            "scanner_predictions",
+            "scanner_strict_tp", "scanner_target_tp",
+            "scanner_unique_strict_tp", "scanner_unique_target_tp",
+            "scanner_publication_rescue_strict_tp",
+            "scanner_publication_rescue_target_tp",
         ):
             totals[field] += int(result.get(field, 0))
         totals["degraded_cases"] += int(result.get("degraded_execution", False))
@@ -777,7 +941,7 @@ class ProductionEvaluationHarness(EndToEndEvaluationHarness):
         commented = totals["accepted_comments"] + totals["closed_comments"]
         expected_total = totals["tp"] + totals["fn"]
         formal_predictions = totals["tp"] + totals["fp"]
-        expanded_tp = totals["tp"] + totals["formal_label_gap_required"]
+        expanded_tp = totals["target_tp"] + totals["formal_label_gap_required"]
         expanded_expected = expected_total + totals["formal_label_gap_required"]
         formal_complete = totals["formal_unjudged_findings"] == 0
         expanded_precision = (
@@ -832,7 +996,7 @@ class ProductionEvaluationHarness(EndToEndEvaluationHarness):
             "adjudicated_formal_precision": expanded_precision,
             "adjudicated_formal_utility_rate": round(
                 (
-                    totals["tp"] + totals["formal_label_gap_required"]
+                    totals["target_tp"] + totals["formal_label_gap_required"]
                     + totals["formal_optional_findings"]
                 ) / totals["formal_adjudicated"], 4
             ) if totals["formal_adjudicated"] and formal_complete else None,
@@ -845,7 +1009,7 @@ class ProductionEvaluationHarness(EndToEndEvaluationHarness):
             "expanded_required_recall": expanded_recall,
             "expanded_required_f1": expanded_f1,
             "targeted_review_recall": round(
-                totals["tp"] / expected_total, 4
+                totals["target_tp"] / expected_total, 4
             ) if expected_total else 1.0,
             "suggestion_utility_rate": round(
                 totals["suggestion_useful"] / totals["suggestion_adjudicated"], 4
@@ -878,6 +1042,36 @@ class ProductionEvaluationHarness(EndToEndEvaluationHarness):
             "worker_failures": totals["worker_failures"],
             "degraded_execution_rate": round(totals["degraded_cases"] / cases, 4),
             "full_role_success_rate": round(1 - totals["degraded_cases"] / cases, 4),
+            "worker_formal_strict_recall": round(
+                totals["worker_formal_strict_tp"] / expected_total, 4
+            ) if expected_total else 1.0,
+            "worker_formal_target_recall": round(
+                totals["worker_formal_target_tp"] / expected_total, 4
+            ) if expected_total else 1.0,
+            "worker_published_strict_recall": round(
+                totals["worker_published_strict_tp"] / expected_total, 4
+            ) if expected_total else 1.0,
+            "worker_published_target_recall": round(
+                totals["worker_published_target_tp"] / expected_total, 4
+            ) if expected_total else 1.0,
+            "scanner_strict_recall": round(
+                totals["scanner_strict_tp"] / expected_total, 4
+            ) if expected_total else 1.0,
+            "scanner_target_recall": round(
+                totals["scanner_target_tp"] / expected_total, 4
+            ) if expected_total else 1.0,
+            "scanner_unique_strict_recall": round(
+                totals["scanner_unique_strict_tp"] / expected_total, 4
+            ) if expected_total else 0.0,
+            "scanner_unique_target_recall": round(
+                totals["scanner_unique_target_tp"] / expected_total, 4
+            ) if expected_total else 0.0,
+            "scanner_publication_rescue_strict_recall": round(
+                totals["scanner_publication_rescue_strict_tp"] / expected_total, 4
+            ) if expected_total else 0.0,
+            "scanner_publication_rescue_target_recall": round(
+                totals["scanner_publication_rescue_target_tp"] / expected_total, 4
+            ) if expected_total else 0.0,
         })
         return values
 

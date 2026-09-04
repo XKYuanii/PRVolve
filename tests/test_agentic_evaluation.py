@@ -1857,6 +1857,121 @@ class AgenticEvaluationTests(unittest.TestCase):
         self.assertEqual(1.0, metrics["combined_recall_after_verification"])
         self.assertEqual(1.0, metrics["suggestion_utility_rate"])
 
+    def test_evaluation_separates_worker_scanner_and_product_recall(self):
+        worker = Finding(
+            rule_id="CWE-248", severity=Severity.HIGH,
+            title="Missing-key failure", explanation="The first lookup can fail.",
+            path="app.py", line=1, evidence="mapping[first]",
+            fix="Guard the lookup.", test="Cover a missing first key.",
+            source="correctness-reliability",
+        )
+        worker_second = Finding(
+            rule_id="CWE-129", severity=Severity.HIGH,
+            title="Empty sequence", explanation="The second access can fail.",
+            path="app.py", line=2, evidence="values[0]",
+            fix="Guard the access.", test="Cover an empty sequence.",
+            source="correctness-reliability",
+        )
+        scanner_first = Finding(
+            rule_id="COR-MISSING-MAPPING-GUARD", severity=Severity.HIGH,
+            title="Missing-key failure", explanation="The first lookup can fail.",
+            path="app.py", line=1, evidence="mapping[first]",
+            fix="Guard the lookup.", test="Cover a missing first key.",
+            source="local-rule-scanner",
+        )
+        scanner_second = Finding(
+            rule_id="COR-EMPTY-SEQUENCE-ACCESS", severity=Severity.HIGH,
+            title="Empty sequence", explanation="The second access can fail.",
+            path="app.py", line=2, evidence="values[0]",
+            fix="Guard the access.", test="Cover an empty sequence.",
+            source="local-rule-scanner",
+        )
+
+        class MixedReviewer:
+            name = "mixed"
+
+            def review_case(self, _case, _parsed):
+                return [scanner_first, scanner_second]
+
+            def evaluation_summary(self):
+                return {
+                    "worker_results": [{"findings": [
+                        worker.to_dict(), worker_second.to_dict(),
+                    ]}],
+                    "scanner_finding_details": [
+                        scanner_first.to_dict(), scanner_second.to_dict(),
+                    ],
+                    "publication_decisions": [
+                        {"source": "correctness-reliability",
+                         "rule_id": "CWE-248", "disposition": "confirmed"},
+                        {"source": "correctness-reliability",
+                         "rule_id": "CWE-129", "disposition": "rejected"},
+                    ],
+                }
+
+        case = {
+            "id": "source-lanes", "repository": "repo", "pull_request": 1,
+            "split": "validation", "source": {"kind": "synthetic-controlled"},
+            "diff": (
+                "--- a/app.py\n+++ b/app.py\n@@ -0,0 +1,2 @@\n"
+                "+mapping[first]\n+values[0]\n"
+            ),
+            "expected_findings": [
+                {"path": "app.py", "start_line": 1, "end_line": 1,
+                 "cwe": "CWE-248", "severity": "high"},
+                {"path": "app.py", "start_line": 2, "end_line": 2,
+                 "cwe": "CWE-129", "severity": "high"},
+            ],
+        }
+
+        metrics = ProductionEvaluationHarness().run(
+            MixedReviewer(), [case], "source-lanes"
+        )["metrics"]
+
+        self.assertEqual(1.0, metrics["worker_formal_strict_recall"])
+        self.assertEqual(0.5, metrics["worker_published_strict_recall"])
+        self.assertEqual(1.0, metrics["scanner_strict_recall"])
+        self.assertEqual(0.0, metrics["scanner_unique_strict_recall"])
+        self.assertEqual(0.5, metrics["scanner_publication_rescue_strict_recall"])
+        self.assertEqual(1.0, metrics["recall"])
+        self.assertEqual(1.0, metrics["target_detection_recall"])
+
+    def test_cwe_mismatch_is_a_taxonomy_miss_not_a_target_miss(self):
+        finding = Finding(
+            rule_id="CWE-476", severity=Severity.HIGH,
+            title="Missing-key failure",
+            explanation="The removed guard allows a missing key lookup.",
+            path="app.py", line=1, evidence="mapping[key]",
+            fix="Restore the guard.", test="Cover a missing key.",
+            source="correctness-reliability",
+        )
+
+        class WrongTaxonomyReviewer:
+            name = "wrong-taxonomy"
+
+            def review_case(self, _case, _parsed):
+                return [finding]
+
+        case = {
+            "id": "taxonomy", "repository": "repo", "pull_request": 1,
+            "split": "validation", "source": {"kind": "synthetic-controlled"},
+            "diff": "--- a/app.py\n+++ b/app.py\n@@ -0,0 +1 @@\n+mapping[key]\n",
+            "expected_findings": [{
+                "path": "app.py", "start_line": 1, "end_line": 1,
+                "cwe": "CWE-248", "severity": "high",
+            }],
+        }
+
+        metrics = ProductionEvaluationHarness().run(
+            WrongTaxonomyReviewer(), [case], "taxonomy"
+        )["metrics"]
+
+        self.assertEqual(0, metrics["tp"])
+        self.assertEqual(1.0, metrics["target_detection_recall"])
+        self.assertEqual(1.0, metrics["targeted_review_recall"])
+        self.assertEqual(0.0, metrics["taxonomy_accuracy_on_detected_targets"])
+        self.assertEqual(1.0, metrics["adjudicated_formal_precision"])
+
     def test_worker_failure_is_reported_as_degraded_execution(self):
         class DegradedReviewer:
             name = "degraded"
@@ -2122,6 +2237,16 @@ class AgenticEvaluationTests(unittest.TestCase):
                 actual[item["role"]] = actual.get(item["role"], 0) + 1
             self.assertEqual(calls, actual)
             self.assertEqual(22, reviewer.evaluation_config()["deterministic_rules"])
+            self.assertFalse(
+                reviewer.evaluation_config()["scanner_findings_seed_agents"]
+            )
+            self.assertEqual(
+                "parallel-unseeded-publication-safety-net",
+                reviewer.evaluation_config()["scanner_orchestration"],
+            )
+            self.assertEqual(
+                64, len(reviewer.evaluation_config()["scanner_catalog_sha256"])
+            )
             self.assertEqual(0, reviewer.evaluation_config()["max_revision_rounds"])
             self.assertFalse(
                 reviewer.evaluation_config()["publish_unverified_suggestions"]

@@ -131,6 +131,7 @@ def _normalized_path(path: str) -> str:
 
 def _candidate_edges(
     expected: List[dict], predicted: List[Finding], line_tolerance: int,
+    require_taxonomy: bool = True,
 ) -> Dict[int, List[Tuple[int, int]]]:
     edges: Dict[int, List[Tuple[int, int]]] = {}
     for expected_index, truth in enumerate(expected):
@@ -146,23 +147,30 @@ def _candidate_edges(
             if _normalized_path(finding.path) != truth_path:
                 continue
             canonical_rule = normalize_rule_id(finding.rule_id)
-            if RULE_TO_CWE.get(canonical_rule, canonical_rule).upper() not in truth_cwes:
+            taxonomy_hit = (
+                RULE_TO_CWE.get(canonical_rule, canonical_rule).upper() in truth_cwes
+            )
+            if require_taxonomy and not taxonomy_hit:
                 continue
             if start <= finding.line <= end:
                 distance = 0
             else:
                 distance = min(abs(finding.line - start), abs(finding.line - end))
             if distance <= line_tolerance:
-                options.append((predicted_index, distance))
-        edges[expected_index] = sorted(options, key=lambda item: (item[1], item[0]))
+                options.append((predicted_index, distance, taxonomy_hit))
+        # When taxonomy is not required, prefer a taxonomy-correct prediction at
+        # the same location without making the label determine target coverage.
+        edges[expected_index] = [
+            (predicted_index, distance)
+            for predicted_index, distance, _taxonomy_hit in sorted(
+                options, key=lambda item: (not item[2], item[1], item[0])
+            )
+        ]
     return edges
 
 
-def one_to_one_match(
-    expected: List[dict], predicted: List[Finding], line_tolerance: int = 2,
-) -> List[Match]:
+def _maximum_matching(edges: Dict[int, List[Tuple[int, int]]]) -> List[Match]:
     """Maximum-cardinality bipartite matching with deterministic edge ordering."""
-    edges = _candidate_edges(expected, predicted, line_tolerance)
     prediction_owner: Dict[int, int] = {}
 
     def assign(expected_index: int, visited: set) -> bool:
@@ -177,7 +185,7 @@ def one_to_one_match(
         return False
 
     # Constrained truths go first so flexible ranges do not consume their only edge.
-    order = sorted(range(len(expected)), key=lambda index: (len(edges[index]), index))
+    order = sorted(edges, key=lambda index: (len(edges[index]), index))
     for expected_index in order:
         assign(expected_index, set())
 
@@ -189,6 +197,29 @@ def one_to_one_match(
         )
         matches.append(Match(expected_index, predicted_index, distance))
     return sorted(matches, key=lambda item: (item.expected_index, item.predicted_index))
+
+
+def one_to_one_match(
+    expected: List[dict], predicted: List[Finding], line_tolerance: int = 2,
+) -> List[Match]:
+    """Match location and CWE identity for the legacy strict benchmark score."""
+    return _maximum_matching(
+        _candidate_edges(expected, predicted, line_tolerance, require_taxonomy=True)
+    )
+
+
+def one_to_one_target_match(
+    expected: List[dict], predicted: List[Finding], line_tolerance: int = 0,
+) -> List[Match]:
+    """Measure labelled target coverage without treating CWE as defect identity.
+
+    This intentionally measures recall of known review locations, not precision
+    or full semantic equivalence. CWE correctness remains visible through the
+    strict score and taxonomy accuracy instead of erasing a located risk.
+    """
+    return _maximum_matching(
+        _candidate_edges(expected, predicted, line_tolerance, require_taxonomy=False)
+    )
 
 
 class FixtureRepairer:
@@ -299,10 +330,12 @@ class EndToEndEvaluationHarness:
         source_kinds = sorted({
             str((case.get("source") or {}).get("kind", "unknown")) for case in cases
         })
+        config_reader = getattr(reviewer, "evaluation_config", None)
         return {
             "schema_version": 1,
             "name": name or reviewer.name,
             "reviewer": reviewer.name,
+            "reviewer_config": config_reader() if config_reader else {},
             "dataset": {
                 "cases": len(cases),
                 "repositories": len({case["repository"] for case in cases}),
@@ -343,6 +376,11 @@ class EndToEndEvaluationHarness:
             "repair_passed": 0,
             "e2e_success": False,
             "matches": [],
+            "target_tp": 0,
+            "target_fn": len(expected),
+            "target_matches": [],
+            "taxonomy_hits": 0,
+            "taxonomy_misses": 0,
             "expected_findings": expected,
             "predicted_findings": [],
             "repair": [],
@@ -356,11 +394,27 @@ class EndToEndEvaluationHarness:
                 if review_case else reviewer.review(case["diff"], parsed)
             )
             matches = one_to_one_match(expected, findings, self.line_tolerance)
+            target_matches = one_to_one_target_match(expected, findings)
             result["predicted"] = len(findings)
             result["predicted_findings"] = [item.to_dict() for item in findings]
             result["tp"] = len(matches)
             result["fp"] = len(findings) - len(matches)
             result["fn"] = len(expected) - len(matches)
+            result["target_tp"] = len(target_matches)
+            result["target_fn"] = len(expected) - len(target_matches)
+            result["taxonomy_hits"] = len(matches)
+            result["taxonomy_misses"] = len(target_matches) - len(matches)
+            result["target_matches"] = [
+                {
+                    "expected_index": match.expected_index,
+                    "predicted_index": match.predicted_index,
+                    "path": findings[match.predicted_index].path,
+                    "line": findings[match.predicted_index].line,
+                    "rule_id": findings[match.predicted_index].rule_id,
+                    "location_distance": match.location_distance,
+                }
+                for match in target_matches
+            ]
             result["clean_hit"] = not expected and not findings
             result["execution_success"] = True
             matched_expected = set()
@@ -407,7 +461,9 @@ class EndToEndEvaluationHarness:
     def _empty_totals() -> Dict[str, int]:
         return {
             "cases": 0, "risk_cases": 0, "clean_cases": 0, "tp": 0, "fp": 0,
-            "fn": 0, "severity_hits": 0, "high_total": 0, "high_hits": 0,
+            "fn": 0, "target_tp": 0, "target_fn": 0,
+            "taxonomy_hits": 0, "taxonomy_misses": 0,
+            "severity_hits": 0, "high_total": 0, "high_hits": 0,
             "clean_hits": 0, "execution_successes": 0, "repair_attempted": 0,
             "repair_passed": 0, "e2e_successes": 0,
         }
@@ -418,7 +474,9 @@ class EndToEndEvaluationHarness:
         totals["risk_cases"] += int(result["expected"] > 0)
         totals["clean_cases"] += int(result["expected"] == 0)
         for field in (
-            "tp", "fp", "fn", "severity_hits", "high_total", "high_hits",
+            "tp", "fp", "fn", "target_tp", "target_fn",
+            "taxonomy_hits", "taxonomy_misses",
+            "severity_hits", "high_total", "high_hits",
             "repair_attempted", "repair_passed",
         ):
             totals[field] += int(result[field])
@@ -441,6 +499,13 @@ class EndToEndEvaluationHarness:
             "precision": precision,
             "recall": recall,
             "f1": f1,
+            "target_detection_recall": ratio(
+                totals["target_tp"], totals["target_tp"] + totals["target_fn"]
+            ),
+            "taxonomy_accuracy_on_detected_targets": ratio(
+                totals["taxonomy_hits"],
+                totals["taxonomy_hits"] + totals["taxonomy_misses"],
+            ),
             "severity_accuracy": ratio(totals["severity_hits"], totals["tp"]),
             "high_risk_recall": ratio(totals["high_hits"], totals["high_total"]),
             "clean_accuracy": ratio(totals["clean_hits"], totals["clean_cases"]),
