@@ -156,7 +156,9 @@ class AgenticReviewer(Reviewer):
             delegated = session.runtime.run(
                 session.sub(PLANNING, "delegate"),
                 lambda: self._delegate(
-                    session, run, scanned["findings"], memory_context,
+                    # Scanner output remains a deterministic publication
+                    # baseline, but does not seed the Agent's hypothesis search.
+                    session, run, [], memory_context,
                 ),
                 "Lead is decomposing the review",
             )
@@ -186,7 +188,7 @@ class AgenticReviewer(Reviewer):
             rule_findings = restore_findings(planned["scanner_findings"])
 
             worker_results = self._run_assignments(
-                session, run, delegations, planned["scanner_findings"], 0,
+                session, run, delegations, [], 0,
                 memory_context,
             )
             worker_history = [dict(item) for item in worker_results.values()]
@@ -237,7 +239,7 @@ class AgenticReviewer(Reviewer):
                     )
                     revisions.append(revision)
                 revised = self._run_assignments(
-                    session, run, revisions, planned["scanner_findings"], index + 1,
+                    session, run, revisions, [], index + 1,
                     memory_context,
                 )
                 for revision in revisions:

@@ -1471,6 +1471,53 @@ class AgenticEvaluationTests(unittest.TestCase):
         self.assertEqual("CWE-787", normalize_model_rule_id(native_index))
         self.assertEqual("CWE-682", normalize_model_rule_id(all_masked))
 
+    def test_model_rule_normalization_corrects_python_keyerror_taxonomy(self):
+        raw = {
+            "rule_id": "CWE-476", "path": "pkg/processor.py",
+            "title": "Direct indexing of a missing key raises KeyError",
+            "explanation": "The mapping no longer uses get().",
+            "evidence": 'value = event["transaction"]',
+        }
+
+        self.assertEqual("CWE-248", normalize_model_rule_id(raw))
+        raw.update({
+            "title": "Optional object is None",
+            "explanation": "Dereferencing the object raises AttributeError.",
+            "evidence": "value = optional.name",
+        })
+        self.assertEqual("CWE-476", normalize_model_rule_id(raw))
+
+    def test_scanner_findings_are_published_without_seeding_agents(self):
+        class RecordingClient(FakeClient):
+            def __init__(self):
+                self.tasks = []
+
+            def complete_json(self, role, system, user, ledger=None, max_tokens=None):
+                managed = json.loads(user)
+                self.tasks.append((role, json.loads(managed["task"])))
+                return super().complete_json(
+                    role, system, user, ledger=ledger, max_tokens=max_tokens,
+                )
+
+        diff = (
+            "--- a/app.py\n+++ b/app.py\n@@ -1 +1 @@\n"
+            "-value = event.get(\"transaction\")\n"
+            "+value = event[\"transaction\"]\n"
+        )
+        client = RecordingClient()
+        reviewer = ProductArmReviewer("full-agentic", client, 4096)
+
+        findings = reviewer.review(diff, parse_unified_diff(diff))
+
+        self.assertEqual(1, reviewer.evaluation_summary()["scanner_findings"])
+        self.assertEqual("local-rule-scanner", findings[0].source)
+        seeded = [
+            task["scanner_findings"]
+            for _role, task in client.tasks if "scanner_findings" in task
+        ]
+        self.assertTrue(seeded)
+        self.assertTrue(all(not values for values in seeded))
+
     def test_model_rule_normalization_corrects_git_option_bypass_cwe_697(self):
         raw = {
             "rule_id": "CWE-697",

@@ -248,6 +248,7 @@ class ProductArmReviewer:
                 + len(self.router.rules.DIFF_RULES)
                 + len(ContextRuleReviewer.RULES)
             ),
+            "scanner_findings_seed_agents": False,
             "max_revision_rounds": self.router._max_revision_rounds(),
             "publish_unverified_suggestions": False,
             "total_token_budget_per_pr": self.total_token_budget,

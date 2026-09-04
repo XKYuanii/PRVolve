@@ -129,6 +129,18 @@ def normalize_model_rule_id(raw: dict) -> str:
         # out-of-bounds write or null dereference. Preserve the raw label in
         # original_rule_id while using the relevant bounds taxonomy.
         return "CWE-129"
+    if (
+        path.endswith(".py")
+        and rule_id == "CWE-476"
+        and "keyerror" in claim
+        and any(cue in claim for cue in (
+            "mapping", "dictionary", "dict", "missing key", "direct indexing",
+            "subscript", ".get(", "['", '["',
+        ))
+    ):
+        # A Python mapping subscript raises KeyError; it is not a null-pointer
+        # dereference. Keep the model's original label for the audit trail.
+        return "CWE-248"
     if rule_id != "CWE-252":
         return rule_id
     exception_cues = (
