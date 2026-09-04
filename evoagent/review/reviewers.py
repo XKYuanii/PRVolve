@@ -30,6 +30,26 @@ def is_test_path(path: str) -> bool:
     )
 
 
+def removed_lines_by_path(diff: str) -> Dict[str, List[str]]:
+    """Collect deleted hunk lines under their new-file path."""
+    removed: Dict[str, List[str]] = {}
+    current_path = ""
+    in_hunk = False
+    for raw in diff.splitlines():
+        if raw.startswith("+++ "):
+            current_path = raw[4:].strip()
+            if current_path.startswith("b/"):
+                current_path = current_path[2:]
+            in_hunk = False
+            continue
+        if raw.startswith("@@ "):
+            in_hunk = True
+            continue
+        if in_hunk and raw.startswith("-") and not raw.startswith("---"):
+            removed.setdefault(current_path or "unknown", []).append(raw[1:])
+    return removed
+
+
 def suppress_contextual_false_positive(
     rule_id: str, content: str, path: str = "",
 ) -> bool:
@@ -141,6 +161,10 @@ class LocalRuleReviewer(Reviewer):
         "SEC-JINJA-UNSANDBOXED",
         "SEC-PATH-TRAVERSAL",
         "SEC-GHA-EXPRESSION-IN-SHELL",
+        "COR-EMPTY-SEQUENCE-ACCESS",
+        "COR-MISSING-MAPPING-GUARD",
+        "COR-OPTIONAL-ASSIGNMENT-GUARD",
+        "COR-EMPTY-VALUE-SEMANTICS",
     )
 
     def review(self, diff: str, parsed: ParsedDiff) -> List[Finding]:
@@ -192,6 +216,10 @@ class LocalRuleReviewer(Reviewer):
         findings.extend(self._jinja_sandbox_downgrade(diff, parsed, seen))
         findings.extend(self._path_containment_removal(diff, parsed, seen))
         findings.extend(self._github_actions_expression_shell(diff, parsed, seen))
+        findings.extend(self._empty_sequence_guard_removal(diff, parsed, seen))
+        findings.extend(self._mapping_guard_removal(diff, parsed, seen))
+        findings.extend(self._optional_assignment_guard_removal(diff, parsed, seen))
+        findings.extend(self._empty_value_semantics_regression(diff, parsed, seen))
         return findings
 
     @staticmethod
@@ -437,6 +465,212 @@ class LocalRuleReviewer(Reviewer):
                 line,
                 "先把表达式赋给 env，再在脚本中以双引号引用环境变量，并校验允许值。",
                 "加入包含引号、换行和命令替换字符的输出测试，确认它只能作为单个数据参数。",
+            ))
+        return findings
+
+    @staticmethod
+    def _empty_sequence_guard_removal(
+        diff: str, parsed: ParsedDiff, seen: set,
+    ) -> List[Finding]:
+        """Detect direct boundary access replacing an explicit empty-input guard."""
+        removed = removed_lines_by_path(diff)
+        boundary_index = re.compile(
+            r"(?P<value>(?:self\.)?[A-Za-z_]\w*(?:\.[A-Za-z_]\w*)*)"
+            r"\s*\[\s*(?:0|-1)\s*\]"
+        )
+        max_without_default = re.compile(
+            r"\bmax\(\s*(?P<value>(?:self\.)?[A-Za-z_]\w*"
+            r"(?:\.[A-Za-z_]\w*)*)\s*\)"
+        )
+        findings = []
+        emitted_paths = set()
+        for line in parsed.added_lines:
+            if is_test_path(line.path) or line.path in emitted_paths:
+                continue
+            deleted = removed.get(line.path, [])
+            index_match = boundary_index.search(line.content)
+            max_match = max_without_default.search(line.content)
+            guarded = False
+            if index_match:
+                value = re.escape(index_match.group("value"))
+                guarded = any(
+                    re.search(r"\b%s\.(?:endswith|startswith)\s*\(" % value, old)
+                    or re.search(r"\bif\s+not\s+%s\b" % value, old)
+                    or re.search(r"\blen\s*\(\s*%s\s*\)\s*[><=]" % value, old)
+                    for old in deleted
+                )
+            elif max_match:
+                value = re.escape(max_match.group("value"))
+                guarded = any(
+                    re.search(r"\bmax\(\s*%s\s*,\s*default\s*=" % value, old)
+                    for old in deleted
+                )
+            if not guarded:
+                continue
+            identity = ("COR-EMPTY-SEQUENCE-ACCESS", line.path, line.line)
+            if identity in seen:
+                continue
+            seen.add(identity)
+            emitted_paths.add(line.path)
+            findings.append(LocalRuleReviewer._cross_line_finding(
+                "COR-EMPTY-SEQUENCE-ACCESS", Severity.MEDIUM,
+                "空序列保护被直接边界访问替换",
+                (
+                    "同一文件删除了空输入安全写法或长度保护，并新增首尾索引或无默认值的 "
+                    "max 调用；空容器会在正常边界输入上抛出异常。"
+                ),
+                line,
+                "恢复空值/长度保护，或使用不会在空序列上抛异常的 API。",
+                "加入空列表、空字符串以及仅含边界值的回归测试。",
+            ))
+        return findings
+
+    @staticmethod
+    def _mapping_guard_removal(
+        diff: str, parsed: ParsedDiff, seen: set,
+    ) -> List[Finding]:
+        """Detect direct key access replacing a same-mapping optional lookup."""
+        removed = removed_lines_by_path(diff)
+        direct_lookup = re.compile(
+            r"(?P<value>(?:self\.)?[A-Za-z_]\w*(?:\.[A-Za-z_]\w*)*)"
+            r"\s*\[\s*(?:['\"][^'\"]+['\"]|str\([^\]]+\))\s*\]"
+        )
+        findings = []
+        emitted_paths = set()
+        for line in parsed.added_lines:
+            if is_test_path(line.path) or line.path in emitted_paths:
+                continue
+            match = direct_lookup.search(line.content)
+            if not match:
+                continue
+            value = re.escape(match.group("value"))
+            if not any(
+                re.search(r"\b%s\.get\s*\(" % value, old)
+                for old in removed.get(line.path, [])
+            ):
+                continue
+            identity = ("COR-MISSING-MAPPING-GUARD", line.path, line.line)
+            if identity in seen:
+                continue
+            seen.add(identity)
+            emitted_paths.add(line.path)
+            findings.append(LocalRuleReviewer._cross_line_finding(
+                "COR-MISSING-MAPPING-GUARD", Severity.MEDIUM,
+                "可选字典读取被直接索引替换",
+                (
+                    "同一映射原本通过 get 读取可选键，改动后使用直接下标；当上游省略该键时，"
+                    "调用路径会产生未处理的 KeyError。"
+                ),
+                line,
+                "保留可选读取并显式处理缺失值，或在索引前验证键存在。",
+                "加入缺少该字段的输入，断言调用方获得定义明确的降级结果。",
+            ))
+        return findings
+
+    @staticmethod
+    def _optional_assignment_guard_removal(
+        diff: str, parsed: ParsedDiff, seen: set,
+    ) -> List[Finding]:
+        """Detect moving an assignment outside its explicit non-None guard."""
+        removed = removed_lines_by_path(diff)
+        assignment = re.compile(
+            r"^\s*[A-Za-z_]\w*(?:\.[A-Za-z_]\w*)+\s*=\s*"
+            r"(?P<value>(?:self\.)?[A-Za-z_]\w*(?:\.[A-Za-z_]\w*)*)\s*$"
+        )
+        findings = []
+        for line in parsed.added_lines:
+            if is_test_path(line.path):
+                continue
+            match = assignment.match(line.content)
+            if not match:
+                continue
+            deleted = removed.get(line.path, [])
+            value = re.escape(match.group("value"))
+            if not (
+                any(old.strip() == line.content.strip() for old in deleted)
+                and any(
+                    re.search(r"\bif\s+%s\s+is\s+not\s+None\s*:" % value, old)
+                    for old in deleted
+                )
+            ):
+                continue
+            identity = ("COR-OPTIONAL-ASSIGNMENT-GUARD", line.path, line.line)
+            if identity in seen:
+                continue
+            seen.add(identity)
+            findings.append(LocalRuleReviewer._cross_line_finding(
+                "COR-OPTIONAL-ASSIGNMENT-GUARD", Severity.MEDIUM,
+                "可选值赋值失去 None 保护",
+                (
+                    "赋值语句被移出同一文件中原有的非 None 条件；目标 API 若不接受 None，"
+                    "序列化或边界转换将失败。"
+                ),
+                line,
+                "恢复非 None 条件，或在目标字段边界显式定义并验证 None 的语义。",
+                "加入可选值为 None 的序列化或转换回归测试。",
+            ))
+        return findings
+
+    @staticmethod
+    def _empty_value_semantics_regression(
+        diff: str, parsed: ParsedDiff, seen: set,
+    ) -> List[Finding]:
+        """Detect narrowing a condition between None-only and empty-aware semantics."""
+        removed = removed_lines_by_path(diff)
+        truthy = re.compile(
+            r"^\s*if\s+(?P<value>(?:self\.)?[A-Za-z_]\w*"
+            r"(?:\.[A-Za-z_]\w*)*)\s*:"
+        )
+        none_check = re.compile(
+            r"^\s*if\s+(?P<value>(?:self\.)?[A-Za-z_]\w*"
+            r"(?:\.[A-Za-z_]\w*)*)\s+is\s+(?P<neg>not\s+)?None\s*:"
+        )
+        findings = []
+        emitted_paths = set()
+        for line in parsed.added_lines:
+            if is_test_path(line.path) or line.path in emitted_paths:
+                continue
+            deleted = removed.get(line.path, [])
+            truthy_match = truthy.match(line.content)
+            none_match = none_check.match(line.content)
+            regressed = False
+            if truthy_match:
+                raw_value = truthy_match.group("value")
+                if raw_value.rsplit(".", 1)[-1] == "default":
+                    value = re.escape(raw_value)
+                    regressed = any(
+                        re.match(
+                            r"^\s*if\s+%s\s+is\s+not\s+None\s*:" % value,
+                            old,
+                        )
+                        for old in deleted
+                    )
+            elif none_match and not none_match.group("neg"):
+                raw_value = none_match.group("value")
+                value = re.escape(raw_value)
+                regressed = any(
+                    re.match(
+                        r"^\s*if\s+%s\s+is\s+None\s+or\s+" % value, old,
+                    )
+                    for old in deleted
+                )
+            if not regressed:
+                continue
+            identity = ("COR-EMPTY-VALUE-SEMANTICS", line.path, line.line)
+            if identity in seen:
+                continue
+            seen.add(identity)
+            emitted_paths.add(line.path)
+            findings.append(LocalRuleReviewer._cross_line_finding(
+                "COR-EMPTY-VALUE-SEMANTICS", Severity.MEDIUM,
+                "None 与空值的分支语义被改变",
+                (
+                    "同一条件在 None 检查与真值/空值检查之间被收窄；空字符串、空集合或零值"
+                    "会进入与原契约不同的分支。"
+                ),
+                line,
+                "明确区分未提供值与已提供的空值，并恢复与调用契约一致的条件。",
+                "分别覆盖 None、空字符串、空集合、零值和正常值。",
             ))
         return findings
 

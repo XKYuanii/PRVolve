@@ -1,5 +1,6 @@
 import json
 import unittest
+from types import SimpleNamespace
 
 from evoagent.core.diff_parser import parse_unified_diff
 from evoagent.agents.loop import AgentLoop
@@ -37,14 +38,14 @@ class FakeClient:
     model = "fake-model"
 
     def complete_json(self, role, _system, user, ledger=None, max_tokens=None):
+        managed = json.loads(user)
+        task = json.loads(managed["task"])
         if ledger:
             ledger.record_model(
                 role, self.provider, self.model,
                 {"prompt_tokens": 10, "completion_tokens": 5}, 1,
             )
         if role == "lead":
-            managed = json.loads(user)
-            task = json.loads(managed["task"])
             if task["phase"] == "delegate":
                 return {
                     "action": "final",
@@ -75,10 +76,47 @@ class FakeClient:
                 }
             raise AssertionError(task["phase"])
         if role in {"security", "correctness-reliability"}:
-            return {"action": "final", "findings": []}
+            observations = managed.get("observations") or []
+            own_success = any(
+                item.get("ok") and int(item.get("step") or 0) >= 1
+                for item in observations
+            )
+            if task.get("repository_context_available") and not own_success:
+                line = task["scoreable_added_lines"][0]
+                return {
+                    "action": "tool", "tool": "changed_line",
+                    "arguments": {"path": line["path"], "line": line["line"]},
+                    "reason": "Verify an assigned changed line.",
+                }
+            evidence_ids = []
+            for item in observations:
+                result = item.get("result")
+                evidence_id = (
+                    result.get("evidence_id") if isinstance(result, dict)
+                    else item.get("evidence_id")
+                )
+                if item.get("ok") and evidence_id:
+                    evidence_ids.append(str(evidence_id))
+            support = evidence_ids[-1:] if evidence_ids else []
+            return {
+                "action": "final", "findings": [],
+                "hypotheses": [{
+                    "hypothesis_id": "hyp-1",
+                    "claim": "The assigned change may violate a repository contract.",
+                    "status": "unresolved",
+                    "explanation": "The fixture records the investigated risk without inventing a defect.",
+                    "required_proof": "Inspect domain-specific callers and tests.",
+                    "supporting_evidence_ids": support,
+                }],
+                "requirement_resolutions": [{
+                    "requirement_id": item["requirement_id"],
+                    "status": "satisfied" if support else "unresolved",
+                    "explanation": "The assigned repository evidence was inspected.",
+                    "supporting_evidence_ids": support,
+                    "required_proof": "Obtain repository context." if not support else "",
+                } for item in task.get("assignment_requirements") or []],
+            }
         if role == "critic":
-            managed = json.loads(user)
-            task = json.loads(managed["task"])
             return {
                 "action": "final",
                 "decisions": [
@@ -95,6 +133,30 @@ class FakeClient:
 
 
 class AgenticEvaluationTests(unittest.TestCase):
+    def test_critic_protocol_failure_fails_closed_without_failing_review(self):
+        class FailingCritic:
+            @staticmethod
+            def _run_critic(*_args, **_kwargs):
+                raise ValueError("invalid critic JSON")
+
+        candidate = Finding(
+            rule_id="CWE-248", severity=Severity.MEDIUM,
+            title="Candidate", explanation="May raise.", path="app.py", line=1,
+            evidence="value['key']", fix="Guard the key.",
+            test="Exercise a missing key.", confidence=0.9,
+        )
+        ledger = ExecutionLedger("agentic")
+
+        result = AgenticReviewer._critic(
+            FailingCritic(),
+            SimpleNamespace(diff="", task_id="task"),
+            SimpleNamespace(suite=object(), ledger=ledger),
+            [candidate], "verify", {},
+        )
+
+        self.assertFalse(result["decisions"][0]["publication_ready"])
+        self.assertIn("failed closed", result["decisions"][0]["objections"][0])
+
     def test_repository_preflight_prioritizes_semantic_source_over_config(self):
         class RecordingTools:
             def __init__(self):
@@ -347,6 +409,18 @@ class AgenticEvaluationTests(unittest.TestCase):
         exception_cleanup = RepositoryToolSuite.semantic_probe(
             "exception-cleanup-state"
         )["output"]
+        empty_index = RepositoryToolSuite.semantic_probe(
+            "empty-sequence-index"
+        )["output"]
+        missing_key = RepositoryToolSuite.semantic_probe(
+            "missing-mapping-key"
+        )["output"]
+        truthiness = RepositoryToolSuite.semantic_probe(
+            "truthiness-vs-none"
+        )["output"]
+        json_serialization = RepositoryToolSuite.semantic_probe(
+            "json-serialization"
+        )["output"]
 
         self.assertTrue(serialization["excluded_field_update_lost"])
         self.assertTrue(equality["contract_violated"])
@@ -386,6 +460,20 @@ class AgenticEvaluationTests(unittest.TestCase):
         self.assertFalse(empty_netrc["any_field_is_truthy"])
         self.assertTrue(empty_netrc["blank_credentials_pass_tuple_truthiness"])
         self.assertTrue(exception_cleanup["state_remains_installed"])
+        self.assertTrue(all(
+            item["negative_one_index_raises"] for item in empty_index["results"]
+        ))
+        self.assertTrue(missing_key["missing_key_subscript_raises"])
+        self.assertTrue(any(
+            item["branches_diverge"] for item in truthiness["values"]
+        ))
+        self.assertTrue(json_serialization["json_serialization_raises"])
+        self.assertTrue(all(
+            output["requires_resolution"] is False for output in (
+                empty_index, missing_key,
+                truthiness, json_serialization,
+            )
+        ))
         self.assertEqual("RuntimeError", exception_cleanup["error_type"])
         self.assertTrue(all(
             item["arbitrary_code_executed"] is False
@@ -395,8 +483,50 @@ class AgenticEvaluationTests(unittest.TestCase):
                 nullable_length, sentinel, module_getattr,
                 dict_mutation, decimal_exponent, unhashable_exception,
                 missing_scandir, empty_netrc, exception_cleanup,
+                empty_index, missing_key,
+                truthiness, json_serialization,
             )
         ))
+
+    def test_evidence_revision_preflight_prioritizes_target_and_runs_safe_probe(self):
+        class RecordingTools:
+            def __init__(self):
+                self.calls = []
+
+            def names(self):
+                return ["read_file", "semantic_probe"]
+
+            def invoke(self, name, arguments):
+                self.calls.append((name, dict(arguments)))
+                if name == "semantic_probe":
+                    return RepositoryToolSuite.semantic_probe(arguments["kind"])
+                return {
+                    "evidence_id": "read:%d" % len(self.calls),
+                    "tool": name, "output": dict(arguments),
+                }
+
+        parsed = parse_unified_diff(
+            "--- a/src/app.py\n+++ b/src/app.py\n"
+            "@@ -9 +10 @@\n+safe = normalize(value)\n"
+            "@@ -99 +100 @@\n+last = pattern[-1]\n"
+        )
+        tools = RecordingTools()
+
+        repository_preflight({
+            "files": parsed.files,
+            "evidence_targets": [{
+                "evidence_target_id": "correctness-1:hyp-1",
+                "path": "src/app.py", "line": 100,
+                "claim": "An empty string is indexed at -1.",
+                "required_proof": "Show whether empty strings reach this indexing operation.",
+            }],
+        }, parsed, tools)
+
+        reads = [arguments for name, arguments in tools.calls if name == "read_file"]
+        self.assertEqual(100, reads[0]["end_line"] - 25)
+        self.assertIn(
+            ("semantic_probe", {"kind": "empty-sequence-index"}), tools.calls,
+        )
 
     def test_preflight_probes_exception_cleanup_only_without_added_handler(self):
         class RecordingTools:
@@ -756,6 +886,57 @@ class AgenticEvaluationTests(unittest.TestCase):
         self.assertEqual(-0.05, decisions[0]["recommended_confidence_adjustment"])
         self.assertTrue(decisions[0]["publication_ready"])
 
+    def test_critic_cannot_accept_while_reporting_blocking_objections(self):
+        candidate = Finding(
+            rule_id="CWE-682", severity=Severity.MEDIUM,
+            title="Candidate", explanation="The result may be wrong.",
+            path="app.py", line=1, evidence="value = open(base / user_path)",
+            fix="Preserve the prior behavior.", test="Cover the boundary input.",
+            confidence=0.9, source="correctness-reliability",
+        )
+        result = {
+            "decisions": [{
+                "finding_index": 0, "accepted": True,
+                "introduced_by_diff": True, "reproducible": True,
+                "evidence_sufficient": True,
+                "would_comment_on_real_pr": True,
+                "objections": ["The supported-input contract is still missing."],
+            }],
+            "_observations": [],
+        }
+
+        _candidates, decisions = apply_critic(result, [candidate])
+
+        self.assertFalse(decisions[0]["accepted"])
+        self.assertFalse(decisions[0]["publication_ready"])
+        self.assertEqual(1, len(decisions[0]["objections"]))
+
+    def test_critic_can_correct_a_mismatched_cwe_without_rewriting_finding(self):
+        candidate = Finding(
+            rule_id="CWE-835", severity=Severity.MEDIUM,
+            title="Empty filter masks every value",
+            explanation="The computed mask is all false.",
+            path="app.py", line=1, evidence="value = open(base / user_path)",
+            fix="Preserve empty-filter behavior.", test="Cover an empty filter.",
+            confidence=0.9, source="correctness-reliability",
+        )
+        result = {
+            "decisions": [{
+                "finding_index": 0, "accepted": True,
+                "introduced_by_diff": True, "reproducible": True,
+                "evidence_sufficient": True,
+                "would_comment_on_real_pr": True, "objections": [],
+                "corrected_rule_id": "CWE-682",
+            }],
+            "_observations": [],
+        }
+
+        candidates, decisions = apply_critic(result, [candidate])
+
+        self.assertEqual("CWE-682", candidates[0].rule_id)
+        self.assertEqual("CWE-835", candidates[0].original_rule_id)
+        self.assertEqual("CWE-682", decisions[0]["corrected_rule_id"])
+
     def test_same_repository_evidence_and_similar_title_are_deduplicated(self):
         values = [
             Finding(
@@ -851,6 +1032,23 @@ class AgenticEvaluationTests(unittest.TestCase):
         self.assertEqual("protocol-requirement", result["_observations"][0]["tool"])
         self.assertTrue(result["_observations"][1]["ok"])
 
+    def test_invalid_action_envelope_is_repaired_once_on_demand(self):
+        class SequencedClient:
+            def __init__(self):
+                self.actions = [{}, {"action": "final", "decisions": []}]
+
+            def complete_json(self, *_args, **_kwargs):
+                return self.actions.pop(0)
+
+        result = AgentLoop(
+            "critic", "Review.", SequencedClient(),
+            token_budget=4000, time_budget=30,
+        ).run("{}", ToolRegistry([]), ExecutionLedger("agentic"))
+
+        self.assertEqual(2, result["_steps"])
+        self.assertEqual(1, len(result["_observations"]))
+        self.assertIn("Invalid action envelope", result["_observations"][0]["error"])
+
     def test_worker_must_resolve_fixed_counterexample_before_finishing(self):
         class SequencedClient:
             def __init__(self):
@@ -862,6 +1060,7 @@ class AgenticEvaluationTests(unittest.TestCase):
                             "evidence_id": "semantic_probe:test",
                             "status": "refuted",
                             "explanation": "Repository type evidence proves None is unreachable.",
+                            "proof_kind": "type_constraint",
                             "supporting_evidence_ids": ["read_file:test"],
                         }],
                     },
@@ -898,6 +1097,44 @@ class AgenticEvaluationTests(unittest.TestCase):
         self.assertEqual(2, result["_steps"])
         self.assertEqual("protocol-requirement", result["_observations"][-1]["tool"])
         self.assertIn("semantic_probe:test", result["_observations"][-1]["error"])
+
+    def test_worker_may_preserve_a_fixed_counterexample_as_unresolved(self):
+        class UnresolvedClient:
+            def complete_json(self, *_args, **_kwargs):
+                return {
+                    "action": "final", "findings": [],
+                    "evidence_resolutions": [{
+                        "evidence_id": "semantic_probe:test",
+                        "status": "unresolved",
+                        "explanation": "The probe diverges but callers are not available.",
+                        "required_proof": "Inspect every caller precondition.",
+                        "supporting_evidence_ids": ["semantic_probe:test"],
+                    }],
+                }
+
+        initial = [{
+            "step": 0, "tool": "semantic_probe", "ok": True,
+            "result": {
+                "evidence_id": "semantic_probe:test", "tool": "semantic_probe",
+                "output": {
+                    "requires_resolution": True,
+                    "resolution_question": "Explain the divergent branch.",
+                },
+            },
+        }]
+
+        result = AgentLoop(
+            "correctness-reliability", "Review.", UnresolvedClient(),
+            token_budget=4000, time_budget=30,
+        ).run(
+            "{}", ToolRegistry([]), ExecutionLedger("agentic"),
+            initial_observations=initial,
+        )
+
+        self.assertEqual(1, result["_steps"])
+        self.assertEqual(
+            "unresolved", result["evidence_resolutions"][0]["status"]
+        )
 
     def test_worker_finding_resolution_requires_structured_finding(self):
         class SequencedClient:
@@ -952,6 +1189,76 @@ class AgenticEvaluationTests(unittest.TestCase):
         self.assertEqual(1, len(result["findings"]))
         self.assertEqual("protocol-requirement", result["_observations"][-1]["tool"])
         self.assertIn("read_file:defect", result["_observations"][-1]["error"])
+
+    def test_repeated_unstructured_positive_signal_is_deferred_to_lead(self):
+        class RepeatedClient:
+            def __init__(self):
+                self.calls = 0
+
+            def complete_json(self, *_args, **_kwargs):
+                self.calls += 1
+                return {
+                    "action": "final", "findings": [],
+                    "evidence_resolutions": [{
+                        "evidence_id": "read_file:defect", "status": "finding",
+                        "explanation": "The removed guard admits an invalid state.",
+                    }],
+                }
+
+        result = AgentLoop(
+            "correctness-reliability", "Review.", RepeatedClient(),
+            token_budget=4000, time_budget=30,
+        ).run(
+            "{}", ToolRegistry([]), ExecutionLedger("agentic"),
+            initial_observations=[{
+                "step": 0, "tool": "read_file", "ok": True,
+                "result": {
+                    "evidence_id": "read_file:defect", "tool": "read_file",
+                    "output": {"content": "transition(record)"},
+                },
+            }],
+        )
+
+        self.assertEqual(2, result["_steps"])
+        self.assertEqual("unresolved", result["evidence_resolutions"][0]["status"])
+        self.assertEqual("high", result["hypotheses"][0]["risk_level"])
+        self.assertIn("removed guard", result["hypotheses"][0]["claim"])
+
+    def test_late_unstructured_positive_signal_is_deferred_without_another_call(self):
+        class LateSignalClient:
+            def __init__(self):
+                self.calls = 0
+
+            def complete_json(self, *_args, **_kwargs):
+                self.calls += 1
+                if self.calls < 3:
+                    return {"action": "tool", "tool": "lookup", "arguments": {}}
+                return {
+                    "action": "final", "findings": [],
+                    "evidence_resolutions": [{
+                        "evidence_id": "lookup:defect", "status": "finding",
+                        "explanation": "The late probe found a reachable invalid state.",
+                    }],
+                }
+
+        client = LateSignalClient()
+        result = AgentLoop(
+            "correctness-reliability", "Review.", client,
+            token_budget=4000, time_budget=30,
+        ).run(
+            "{}", ToolRegistry([AgentTool(
+                "lookup", "Look up evidence.",
+                {"type": "object", "properties": {}, "additionalProperties": False},
+                lambda: {
+                    "evidence_id": "lookup:defect", "tool": "read_file",
+                    "output": {"content": "invalid state"},
+                },
+            )]), ExecutionLedger("agentic"),
+        )
+
+        self.assertEqual(3, client.calls)
+        self.assertEqual("unresolved", result["evidence_resolutions"][0]["status"])
+        self.assertEqual("high", result["hypotheses"][0]["risk_level"])
 
     def test_worker_retries_when_final_finding_location_fails_validation(self):
         class SequencedClient:
@@ -1024,6 +1331,25 @@ class AgenticEvaluationTests(unittest.TestCase):
         })
         self.assertEqual("CWE-252", normalize_model_rule_id(raw))
 
+    def test_model_rule_normalization_corrects_python_index_and_mask_taxonomy(self):
+        python_index = {
+            "rule_id": "CWE-787", "path": "pkg/module.py",
+            "title": "Out-of-bounds write raises IndexError",
+            "explanation": "A short list is indexed beyond its length.",
+            "evidence": "values[i] = replacement",
+        }
+        native_index = dict(python_index, path="src/module.c")
+        all_masked = {
+            "rule_id": "CWE-252", "path": "reader.py",
+            "title": "Empty filter masks all data",
+            "explanation": "The wrong mask converts all values to NaN.",
+            "evidence": "data = np.where(valid, data, np.nan)",
+        }
+
+        self.assertEqual("CWE-129", normalize_model_rule_id(python_index))
+        self.assertEqual("CWE-787", normalize_model_rule_id(native_index))
+        self.assertEqual("CWE-682", normalize_model_rule_id(all_masked))
+
     def test_model_rule_normalization_corrects_git_option_bypass_cwe_697(self):
         raw = {
             "rule_id": "CWE-697",
@@ -1073,6 +1399,236 @@ class AgenticEvaluationTests(unittest.TestCase):
 
         self.assertIn("Rejected locations: app.py:99", error)
         self.assertIn("app.py:1", error)
+
+    def test_worker_refutation_requires_an_invariant_and_repository_evidence(self):
+        parsed = parse_unified_diff(
+            "--- a/app.py\n+++ b/app.py\n@@ -0,0 +1 @@\n+consume(value)\n"
+        )
+        result = {
+            "findings": [],
+            "hypotheses": [{
+                "hypothesis_id": "hyp-1", "claim": "value may be None",
+                "status": "refuted",
+                "explanation": "The repository type says value is always present.",
+                "supporting_evidence_ids": ["read_file:type"],
+            }],
+            "_observations": [{
+                "step": 1, "tool": "read_file", "ok": True,
+                "result": {
+                    "evidence_id": "read_file:type", "tool": "read_file",
+                    "output": {"content": "value: str"},
+                },
+            }],
+        }
+
+        error = worker_final_validation_error(
+            result, parsed, demand_hypotheses=True,
+            assignment={"worker": "correctness-reliability"},
+            repository_available=True,
+        )
+        self.assertIn("proof_kind", error)
+        result["hypotheses"][0]["proof_kind"] = "type_constraint"
+        self.assertEqual(
+            "",
+            worker_final_validation_error(
+                result, parsed, demand_hypotheses=True,
+                assignment={"worker": "correctness-reliability"},
+                repository_available=True,
+            ),
+        )
+        result["_observations"][0]["result"]["output"] = {
+            "content": "consume(value)"
+        }
+        self.assertIn(
+            "does not establish",
+            worker_final_validation_error(
+                result, parsed, demand_hypotheses=True,
+                assignment={"worker": "correctness-reliability"},
+                repository_available=True,
+            ),
+        )
+
+    def test_worker_cannot_refute_a_risk_as_out_of_scope(self):
+        parsed = parse_unified_diff(
+            "--- a/app.py\n+++ b/app.py\n@@ -0,0 +1 @@\n+consume(value)\n"
+        )
+        result = {
+            "findings": [],
+            "hypotheses": [{
+                "hypothesis_id": "hyp-1", "claim": "value may be None",
+                "status": "refuted", "proof_kind": "documented_contract",
+                "explanation": "This is not a security issue; it belongs to correctness.",
+                "supporting_evidence_ids": ["read_file:type"],
+            }],
+            "_observations": [{
+                "step": 1, "tool": "read_file", "ok": True,
+                "result": {
+                    "evidence_id": "read_file:type", "tool": "read_file",
+                    "output": {"content": "consume(value)"},
+                },
+            }],
+        }
+
+        error = worker_final_validation_error(
+            result, parsed, demand_hypotheses=True,
+            assignment={"worker": "security"}, repository_available=True,
+        )
+
+        self.assertIn("use handoff or unresolved", error)
+
+    def test_worker_validator_downgrades_unsupported_refutation(self):
+        parsed = parse_unified_diff(
+            "--- a/app.py\n+++ b/app.py\n@@ -0,0 +1 @@\n+consume(value)\n"
+        )
+        action = {
+            "action": "final", "findings": [],
+            "hypotheses": [{
+                "hypothesis_id": "hyp-1", "claim": "value may be None",
+                "status": "refuted", "proof_kind": "exhaustive_paths",
+                "explanation": "One nearby read did not show a None value.",
+                "supporting_evidence_ids": ["read_file:type"],
+            }],
+            "_observations": [{
+                "step": 1, "tool": "read_file", "ok": True,
+                "result": {
+                    "evidence_id": "read_file:type", "tool": "read_file",
+                    "output": {"content": "consume(value)"},
+                },
+            }],
+        }
+
+        error = AgenticReviewer._worker_validator(
+            parsed, {"worker": "correctness-reliability"}, True,
+        )(action)
+
+        self.assertEqual("", error)
+        self.assertEqual("unresolved", action["hypotheses"][0]["status"])
+        self.assertEqual("high", action["hypotheses"][0]["risk_level"])
+        self.assertEqual(
+            "protocol-downgrade", action["hypotheses"][0]["origin"]
+        )
+        self.assertIn("does not establish", action["protocol_downgrades"][0]["reason"])
+
+    def test_unresolved_is_a_legal_worker_completion(self):
+        parsed = parse_unified_diff(
+            "--- a/app.py\n+++ b/app.py\n@@ -0,0 +1 @@\n+consume(value)\n"
+        )
+        assignment = {
+            "worker": "correctness-reliability",
+            "required_evidence": ["Verify the value contract."],
+        }
+        result = {
+            "findings": [],
+            "hypotheses": [{
+                "hypothesis_id": "hyp-1", "claim": "value may be None",
+                "status": "unresolved",
+                "explanation": "The only visible annotation is optional.",
+                "required_proof": "Enumerate all writers of value.",
+                "supporting_evidence_ids": ["read_file:type"],
+            }],
+            "requirement_resolutions": [{
+                "requirement_id": "req-1", "status": "satisfied",
+                "explanation": "The visible value contract was inspected.",
+                "supporting_evidence_ids": ["read_file:type"],
+            }],
+            "_observations": [{
+                "step": 1, "tool": "read_file", "ok": True,
+                "result": {
+                    "evidence_id": "read_file:type", "tool": "read_file",
+                    "output": {"content": "value: str | None"},
+                },
+            }],
+        }
+
+        self.assertEqual(
+            "",
+            worker_final_validation_error(
+                result, parsed, demand_hypotheses=True,
+                assignment=assignment, repository_available=True,
+            ),
+        )
+
+    def test_every_lead_requirement_must_be_resolved(self):
+        parsed = parse_unified_diff(
+            "--- a/app.py\n+++ b/app.py\n@@ -0,0 +1 @@\n+consume(value)\n"
+        )
+        result = {
+            "findings": [],
+            "hypotheses": [{
+                "hypothesis_id": "hyp-1", "claim": "value may be None",
+                "status": "unresolved", "explanation": "Writers are not visible.",
+                "required_proof": "Inspect all writers.",
+            }],
+            "requirement_resolutions": [{
+                "requirement_id": "req-1", "status": "unresolved",
+                "explanation": "The type contract is unavailable.",
+                "required_proof": "Inspect the declaration.",
+            }],
+        }
+        assignment = {
+            "worker": "correctness-reliability",
+            "required_evidence": ["Verify types.", "Verify callers."],
+        }
+
+        error = worker_final_validation_error(
+            result, parsed, demand_hypotheses=True,
+            assignment=assignment, repository_available=False,
+        )
+
+        self.assertIn("Missing: req-2", error)
+
+    def test_silent_worker_pass_is_preserved_as_protocol_unresolved(self):
+        class SilentClient:
+            def complete_json(self, *_args, **_kwargs):
+                return {"action": "final", "findings": []}
+
+        parsed = parse_unified_diff(
+            "--- a/app.py\n+++ b/app.py\n@@ -0,0 +1 @@\n+consume(value)\n"
+        )
+        validator = AgenticReviewer._worker_validator(
+            parsed, {
+                "worker": "security", "objective": "Review trust boundaries.",
+                "required_evidence": ["Trace untrusted input."],
+            }, False,
+        )
+
+        result = AgentLoop(
+            "security", "Review.", SilentClient(), 4000, 30,
+            final_action_validator=validator,
+        ).run("{}", ToolRegistry([]), ExecutionLedger("agentic"))
+
+        self.assertEqual([], result["findings"])
+        self.assertEqual("unresolved", result["hypotheses"][0]["status"])
+        self.assertEqual("protocol-fallback", result["hypotheses"][0]["origin"])
+        self.assertEqual(
+            "unresolved", result["requirement_resolutions"][0]["status"]
+        )
+
+    def test_high_risk_unresolved_hypothesis_triggers_same_worker_revision(self):
+        delegations = [{
+            "assignment_id": "security-1", "worker": "security",
+            "files": ["app.py"],
+        }]
+        worker_results = {"security-1": {
+            "assignment_id": "security-1", "worker": "security",
+            "status": "completed", "handled_handoff_ids": [], "handoffs": [],
+            "hypotheses": [{
+                "hypothesis_id": "auth-boundary", "status": "unresolved",
+                "risk_level": "high", "claim": "Authorization may be bypassed.",
+                "location": "app.py:1", "required_proof": "Trace all callers.",
+            }],
+        }}
+
+        decision = AgenticReviewer._complete_assessment_protocol(
+            {"action": "final", "revision_requests": []},
+            delegations, worker_results, remaining_rounds=1,
+        )
+
+        self.assertEqual("security-1", decision["revision_requests"][0]["assignment_id"])
+        self.assertEqual(
+            ["security-1:auth-boundary"],
+            decision["revision_requests"][0]["handoff_ids"],
+        )
 
     def test_suggestion_metrics_measure_recovery_without_publishing_the_claim(self):
         suggestion = Finding(
@@ -1362,7 +1918,7 @@ class AgenticEvaluationTests(unittest.TestCase):
 
     def test_agentic_arms_share_stable_rules_and_real_role_topologies(self):
         self.assertEqual(
-            18,
+            22,
             len(LocalRuleReviewer.RULES)
             + len(LocalRuleReviewer.DIFF_RULES)
             + len(ContextRuleReviewer.RULES),
@@ -1371,11 +1927,9 @@ class AgenticEvaluationTests(unittest.TestCase):
             "multi-llm-no-critic": {
                 "lead": 3, "security": 1, "correctness-reliability": 1,
             },
-            # Critic is asked once to verify with a tool of its own before it
-            # may judge, so it costs two calls, not one.
             "full-agentic": {
                 "lead": 3, "security": 1,
-                "correctness-reliability": 1, "critic": 2,
+                "correctness-reliability": 1, "critic": 1,
             },
         }
         parsed = parse_unified_diff(DIFF)
@@ -1388,11 +1942,21 @@ class AgenticEvaluationTests(unittest.TestCase):
             for item in execution["model_call_log"]:
                 actual[item["role"]] = actual.get(item["role"], 0) + 1
             self.assertEqual(calls, actual)
-            self.assertEqual(18, reviewer.evaluation_config()["deterministic_rules"])
+            self.assertEqual(22, reviewer.evaluation_config()["deterministic_rules"])
             self.assertEqual(0, reviewer.evaluation_config()["max_revision_rounds"])
             self.assertFalse(
                 reviewer.evaluation_config()["publish_unverified_suggestions"]
             )
+            evaluation = reviewer.evaluation_summary()
+            self.assertEqual(
+                evaluation["scanner_findings"],
+                len(evaluation["scanner_finding_details"]),
+            )
+            self.assertTrue(evaluation["lead_assessments"])
+            self.assertEqual([], evaluation["revision_results"])
+            self.assertTrue(all(
+                item["hypotheses"] for item in evaluation["worker_results"]
+            ))
             if arm == "full-agentic":
                 self.assertTrue(any(
                     item["role"] == "critic" and item["tool"] == "changed_line"
@@ -1456,7 +2020,7 @@ class AgenticEvaluationTests(unittest.TestCase):
         self.assertFalse(report["dataset"]["ready"])
         self.assertFalse(report["critic_gate"]["passed"])
         self.assertEqual(
-            {"lead": 9, "security": 3, "correctness-reliability": 3, "critic": 6},
+            {"lead": 9, "security": 3, "correctness-reliability": 3, "critic": 3},
             report["arms"]["full-agentic"]["execution"]["model_role_calls"],
         )
 

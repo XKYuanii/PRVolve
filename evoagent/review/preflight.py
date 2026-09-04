@@ -34,6 +34,22 @@ def repository_preflight(
         return (-score, path, item.line)
 
     added.sort(key=priority)
+    targeted = []
+    for target in assignment.get("evidence_targets") or []:
+        if not isinstance(target, dict):
+            continue
+        path = str(target.get("path") or "")
+        try:
+            line = int(target.get("line") or 0)
+        except (TypeError, ValueError):
+            continue
+        matches = [item for item in added if item.path == path]
+        if not matches:
+            continue
+        exact = next((item for item in matches if item.line == line), None)
+        selected_target = exact or min(matches, key=lambda item: abs(item.line - line))
+        if selected_target not in targeted:
+            targeted.append(selected_target)
     ignored = {
         "append", "format", "get", "items", "join", "strip", "replace",
         "self", "true", "false", "none", "return", "import", "from",
@@ -43,7 +59,7 @@ def repository_preflight(
     observations = []
     selected_regions = []
     seen_regions = set()
-    for item in added:
+    for item in targeted + [value for value in added if value not in targeted]:
         region = (item.path, max(0, (item.line - 1) // 40))
         if region in seen_regions:
             continue
@@ -161,6 +177,30 @@ def repository_preflight(
     # hunk of the same file.
     semantic_text = "\n".join(item.content for item in added[:500])
     lowered = semantic_text.lower()
+    evidence_text = " ".join(
+        "%s %s" % (target.get("claim", ""), target.get("required_proof", ""))
+        for target in assignment.get("evidence_targets") or []
+        if isinstance(target, dict)
+    ).lower()
+    if evidence_text:
+        if any(cue in evidence_text for cue in (
+            "empty sequence", "empty string", "indexerror", "out of range",
+            "empty index", "index into", "[-1]",
+        )):
+            probe_kinds.append("empty-sequence-index")
+        if any(cue in evidence_text for cue in (
+            "missing key", "missing mapping", "keyerror", "dictionary key",
+        )):
+            probe_kinds.append("missing-mapping-key")
+        if any(cue in evidence_text for cue in (
+            "truthiness", "truthy", "falsy", "empty value", "is not none",
+            "explicit none", "explicitly supplied",
+        )):
+            probe_kinds.append("truthiness-vs-none")
+        if any(cue in evidence_text for cue in (
+            "json serial", "non-json", "range object", "not serializable",
+        )):
+            probe_kinds.append("json-serialization")
     if any(token in lowered for token in ("filepath.join", "os.path.join")) and any(
         token in lowered for token in ("repodir", "repository", "base", "path")
     ):

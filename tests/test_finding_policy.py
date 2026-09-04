@@ -256,6 +256,59 @@ class FindingPolicyTests(unittest.TestCase):
             decisions[0]["reasons"],
         )
 
+    def test_fully_verified_critic_can_publish_evidence_backed_point_seven(self):
+        candidate = finding(source="correctness-reliability")
+        candidate.confidence = 0.7
+        candidate.evidence_refs = [{
+            "evidence_id": "read_file:proof",
+            "tool": "read_file",
+            "output": {
+                "path": "app.py",
+                "start_line": 1,
+                "end_line": 4,
+                "content": "dangerous(value)\nresult = consume(value)",
+            },
+        }]
+        critic = {
+            "finding_index": 0,
+            "publication_ready": True,
+            "introduced_by_diff": True,
+            "reproducible": True,
+            "evidence_sufficient": True,
+            "would_comment_on_real_pr": True,
+        }
+
+        published, suggestions, decisions = partition_publication(
+            [], [candidate], [candidate], [critic], repository_available=True,
+            publish_unverified_suggestions=False,
+        )
+
+        self.assertEqual([candidate], published)
+        self.assertEqual([], suggestions)
+        self.assertEqual("confirmed", decisions[0]["disposition"])
+
+    def test_bare_critic_ready_flag_does_not_lower_confidence_threshold(self):
+        candidate = finding(source="correctness-reliability")
+        candidate.confidence = 0.7
+        candidate.evidence_refs = [{
+            "evidence_id": "read_file:proof",
+            "tool": "read_file",
+            "output": {"path": "app.py", "content": "dangerous(value)"},
+        }]
+
+        published, suggestions, decisions = partition_publication(
+            [], [candidate], [candidate],
+            [{"finding_index": 0, "publication_ready": True}],
+            repository_available=True,
+        )
+
+        self.assertEqual([], published)
+        self.assertEqual([candidate], suggestions)
+        self.assertIn(
+            "model confidence below stable publication threshold 0.80",
+            decisions[0]["reasons"],
+        )
+
     def test_exact_stable_confidence_threshold_survives_float_subtraction(self):
         candidate = finding()
         candidate.confidence = 0.85 - 0.05

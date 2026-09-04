@@ -63,7 +63,16 @@ class CapturingClient:
                 "confidence_adjustments": [],
             }
         if role in {"security", "correctness-reliability"}:
-            return {"action": "final", "findings": []}
+            return {
+                "action": "final", "findings": [],
+                "hypotheses": [{
+                    "hypothesis_id": "hyp-1",
+                    "claim": "The compressed change may alter an assigned contract.",
+                    "status": "unresolved",
+                    "explanation": "This context fixture does not expose a repository checkout.",
+                    "required_proof": "Inspect the full source and callers.",
+                }],
+            }
         if role == "critic":
             return {"action": "final", "decisions": []}
         raise AssertionError((role, task))

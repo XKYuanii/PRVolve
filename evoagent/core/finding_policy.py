@@ -31,6 +31,10 @@ CANONICAL_RULE_IDS = frozenset({
     "SEC-JINJA-UNSANDBOXED",
     "SEC-JWT-SIGNATURE-DISABLED",
     "SEC-GHA-EXPRESSION-IN-SHELL",
+    "COR-EMPTY-SEQUENCE-ACCESS",
+    "COR-MISSING-MAPPING-GUARD",
+    "COR-OPTIONAL-ASSIGNMENT-GUARD",
+    "COR-EMPTY-VALUE-SEMANTICS",
 })
 
 RULE_ID_ALIASES = {
@@ -203,6 +207,21 @@ def _semantic_probe_supports_finding(item: dict, finding: Finding) -> bool:
             "url", "redact", "credential", "cwe-200", "cwe-522", "cwe-532",
         ),
         "tri-state-boolean": ("tri-state", "boolean", "none", "default"),
+        "empty-sequence-index": (
+            "cwe-129", "indexerror", "empty sequence", "empty string",
+            "out of range", "[-1]", "indexing",
+        ),
+        "missing-mapping-key": (
+            "keyerror", "missing key", "dictionary key", "mapping key",
+            "cwe-248", "cwe-703",
+        ),
+        "truthiness-vs-none": (
+            "truthiness", "truthy", "falsy", "empty value", "empty string",
+            "is not none", "explicit none", "default",
+        ),
+        "json-serialization": (
+            "json", "serializ", "range object", "typeerror", "cwe-704",
+        ),
         "serialization-exclusion-update": (
             "serializ", "model_dump", "exclude", "update",
         ),

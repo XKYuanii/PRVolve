@@ -187,6 +187,12 @@ class ProductArmReviewer:
         collaboration = summary.get("collaboration") or {}
         execution = summary.get("execution") or {}
         lead = collaboration.get("lead") or {}
+        protocol_events = {
+            "minimum_tool_calls_not_met", "counterexample_resolution_missing",
+            "finding_resolution_without_finding", "finding_resolution_deferred",
+            "final_action_validation_failed",
+            "budget_exhausted",
+        }
         return {
             "gates": dict(summary.get("gates") or {}),
             "rejected_findings": list(summary.get("rejected_findings") or []),
@@ -199,7 +205,20 @@ class ProductArmReviewer:
             "repository_context": dict(summary.get("repository_context") or {}),
             "assignments": list(collaboration.get("assignments") or []),
             "worker_results": list(collaboration.get("worker_results") or []),
+            "worker_history": list(collaboration.get("worker_history") or []),
+            "revision_results": list(collaboration.get("revision_results") or []),
+            "lead_assessments": list(lead.get("assessments") or []),
+            "scanner_findings": int(collaboration.get("scanner_findings", 0) or 0),
+            "scanner_finding_details": list(
+                collaboration.get("scanner_finding_details") or []
+            ),
             "tool_call_log": list(execution.get("tool_call_log") or []),
+            "protocol_events": [
+                {"role": role, **item}
+                for role, items in (execution.get("agent_traces") or {}).items()
+                for item in items
+                if item.get("event") in protocol_events
+            ],
             "publication_decisions": list(
                 collaboration.get("publication_decisions") or []
             ),

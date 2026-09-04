@@ -33,7 +33,7 @@ class ServiceTests(unittest.TestCase):
             ["lead", "security", "correctness-reliability", "critic"],
             result["report"]["collaboration"]["roles"],
         )
-        self.assertEqual(7, result["report"]["execution"]["llm_calls"])
+        self.assertEqual(6, result["report"]["execution"]["llm_calls"])
         self.assertGreater(result["report"]["execution"]["tool_calls"], 0)
         self.assertEqual([], task["collaboration"])
 

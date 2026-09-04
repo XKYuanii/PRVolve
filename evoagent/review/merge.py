@@ -19,7 +19,7 @@ from ..core.diff_parser import ParsedDiff
 from ..core.finding_policy import (
     claim_specific_high_risk_evidence_refs, finding_identity,
     is_deterministic_finding, is_validated_agent_skill_finding,
-    repository_evidence_refs,
+    normalize_rule_id, repository_evidence_refs,
 )
 from ..core.models import Finding, Severity
 from ..session.ledger import ExecutionLedger
@@ -145,6 +145,28 @@ def normalize_revision_requests(raw, assignments):
             "required_evidence": [
                 str(value)[:200] for value in item.get("required_evidence") or []
             ][:20],
+            "handoff_ids": [
+                str(value)[:200] for value in item.get("handoff_ids") or []
+                if str(value).strip()
+            ][:20],
+            "evidence_targets": [
+                {
+                    "evidence_target_id": str(value.get("evidence_target_id") or "")[:200],
+                    "path": str(value.get("path") or "")[:500],
+                    "line": int(value.get("line") or 0),
+                    "claim": str(value.get("claim") or "")[:2000],
+                    "required_proof": str(value.get("required_proof") or "")[:1000],
+                    "kind": str(value.get("kind") or "")[:100],
+                    "supporting_evidence_ids": [
+                        str(item)[:200]
+                        for item in value.get("supporting_evidence_ids") or []
+                        if str(item).strip()
+                    ][:8],
+                }
+                for value in item.get("evidence_targets") or []
+                if isinstance(value, dict) and str(value.get("path") or "").strip()
+                and str(value.get("line") or "").isdigit()
+            ][:12],
         })
     return values
 
@@ -167,7 +189,15 @@ def apply_critic(result, candidates):
     decisions = []
     for index, finding in enumerate(candidates):
         decision = by_index.get(index)
-        accepted = bool(decision and decision.get("accepted"))
+        objections = [
+            str(value).strip()
+            for value in (decision or {}).get("objections") or []
+            if str(value).strip()
+        ]
+        # ``objections`` is the Critic's list of blocking reasons.  Treating a
+        # response as accepted while that list is non-empty made the structured
+        # verdict contradict its own explanation and could leak false positives.
+        accepted = bool(decision and decision.get("accepted") and not objections)
         verification = {
             key: bool(decision and decision.get(key))
             for key in (
@@ -176,6 +206,18 @@ def apply_critic(result, candidates):
             )
         }
         publication_ready = accepted and all(verification.values())
+        corrected_rule_id = ""
+        if publication_ready and decision:
+            proposed_rule_id = str(
+                decision.get("corrected_rule_id") or ""
+            ).strip().upper()
+            if re.fullmatch(r"CWE-\d+", proposed_rule_id):
+                normalized_rule_id = normalize_rule_id(proposed_rule_id)
+                if normalized_rule_id != finding.rule_id:
+                    corrected_rule_id = normalized_rule_id
+                    if not finding.original_rule_id:
+                        finding.original_rule_id = finding.rule_id
+                    finding.rule_id = corrected_rule_id
         recommended_adjustment = 0.0
         if decision:
             try:
@@ -193,10 +235,11 @@ def apply_critic(result, candidates):
             "finding_index": index, "accepted": accepted,
             "publication_ready": publication_ready,
             "recommended_confidence_adjustment": recommended_adjustment,
+            "corrected_rule_id": corrected_rule_id,
             **verification,
-            "objections": (decision or {}).get(
-                "objections", ["critic returned no explicit decision"]
-            ),
+            "objections": objections if decision else [
+                "critic returned no explicit decision"
+            ],
         })
     return candidates, decisions
 
@@ -278,6 +321,14 @@ def partition_publication(
         critic_ready = bool(
             not critic_required or critic.get("publication_ready")
         )
+        critic_fully_verified = bool(
+            critic_required
+            and critic.get("publication_ready")
+            and all(critic.get(key) is True for key in (
+                "introduced_by_diff", "reproducible",
+                "evidence_sufficient", "would_comment_on_real_pr",
+            ))
+        )
         impact_claim = " ".join((
             finding.title, finding.explanation, finding.evidence,
         )).lower()
@@ -312,7 +363,14 @@ def partition_publication(
             reasons.append(
                 "low-severity model finding remains advisory"
             )
-        confidence_threshold = 0.7 if claim_refs else 0.8
+        # The Worker's confidence is an early estimate.  Once an independent
+        # Critic explicitly verifies all four publication obligations against
+        # repository facts, do not make that stale estimate override the
+        # evidence verdict.  A bare publication_ready flag is intentionally
+        # insufficient so integrations cannot bypass the detailed checks.
+        confidence_threshold = 0.7 if (
+            claim_refs or (critic_fully_verified and repository_refs)
+        ) else 0.8
         if finding.confidence + 1e-9 < confidence_threshold:
             reasons.append(
                 "model confidence below stable publication threshold %.2f"

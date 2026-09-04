@@ -25,6 +25,8 @@ def expected_repository_sha(case: dict) -> str:
     source = case.get("source") or {}
     if source.get("kind") == "public-security-fix-reversal":
         return str(source.get("vulnerable_base_sha") or "").strip()
+    if source.get("direction") == "fix-reversal-regression":
+        return str(source.get("base_sha") or "").strip()
     return str(
         source.get("head_sha") or source.get("fixed_head_sha") or ""
     ).strip()
@@ -79,6 +81,10 @@ def main() -> None:
     parser.add_argument("--token-budget", type=int, default=16000)
     parser.add_argument("--time-budget", type=int, default=120)
     parser.add_argument(
+        "--max-revision-rounds", type=int, default=0,
+        help="Allow the existing Lead to request bounded Worker rework.",
+    )
+    parser.add_argument(
         "--without-repository-context", action="store_true",
         help="Remove repository_root for a controlled Diff-only comparison.",
     )
@@ -130,7 +136,8 @@ def main() -> None:
         timeout=args.timeout,
     )
     reviewer = ProductArmReviewer(
-        "full-agentic", client, args.token_budget, args.time_budget
+        "full-agentic", client, args.token_budget, args.time_budget,
+        max_revision_rounds=args.max_revision_rounds,
     )
     print(
         "START case=%s split=%s model=%s timeout=%ss"

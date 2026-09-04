@@ -70,7 +70,16 @@ class FakeChatClient:
                 }],
             }
         if role == "correctness-reliability":
-            return {"action": "final", "findings": []}
+            return {
+                "action": "final", "findings": [],
+                "hypotheses": [{
+                    "hypothesis_id": "hyp-1",
+                    "claim": "Dynamic execution may fail on malformed expressions.",
+                    "status": "unresolved",
+                    "explanation": "This fixture has no repository context.",
+                    "required_proof": "Inspect exception handling and callers.",
+                }],
+            }
         if role == "critic":
             return {"action": "final", "decisions": [{
                 "finding_index": 0, "accepted": True, "objections": [],
@@ -127,7 +136,7 @@ class PhaseImplementationTests(unittest.TestCase):
         findings = reviewer.review_with_context("task", DIFF, parsed, "org/repo")
         summary = reviewer.collaboration_summary("task")
         self.assertEqual(["SEC-EVAL"], [item.rule_id for item in findings])
-        self.assertEqual(7, summary["execution"]["llm_calls"])
+        self.assertEqual(6, summary["execution"]["llm_calls"])
         self.assertEqual(
             ["lead", "security", "correctness-reliability", "critic"],
             summary["collaboration"]["roles"],

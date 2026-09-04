@@ -11,6 +11,7 @@ steps and tens of seconds, so a crash re-runs the role rather than restoring it;
 resumable progress lives one layer up, in ``review.pipeline``.
 """
 import json
+import re
 import time
 from typing import Any, Callable, Dict, List, Optional
 
@@ -18,6 +19,66 @@ from ..errors import BudgetExceeded
 from ..llm.context import ContextManager, estimate_tokens
 from ..session.ledger import ExecutionLedger
 from ..tools.registry import ToolRegistry
+
+
+REFUTATION_PROOF_KINDS = {
+    "type_constraint", "assertion", "exhaustive_paths", "executable_test",
+    "documented_contract",
+}
+
+
+def refutation_supported(
+    proof_kind: str, supporting_evidence_ids, evidence: Dict[str, dict],
+) -> bool:
+    """Require evidence shaped like the claimed proof, not an arbitrary tool call."""
+    refs = [
+        evidence[str(value)] for value in supporting_evidence_ids or []
+        if str(value) in evidence
+    ]
+    if not refs:
+        return False
+    tools = {str(item.get("tool") or "").lower() for item in refs}
+    text = " ".join(
+        json.dumps(item.get("output"), ensure_ascii=False, default=str).lower()
+        for item in refs
+    )
+    kind = str(proof_kind or "").strip().lower()
+    if kind == "type_constraint":
+        return bool(
+            tools.intersection({"read_file", "symbol", "ast_analyze", "search_repository"})
+            and (
+                re.search(r"\b(?:optional|nonnull|non-null|never|literal|protocol)\b", text)
+                or re.search(r"\bis\s+(?:a\s+)?(?:bool|str|int|float|list|dict|tuple)\b", text)
+                or re.search(r"[:>]\s*(?:bool|str|int|float|list|dict|tuple)\b", text)
+            )
+        )
+    if kind == "assertion":
+        return bool(
+            tools.intersection({"read_file", "search_repository", "ast_analyze", "test"})
+            and ("assert" in text or '"passed": true' in text)
+        )
+    if kind == "exhaustive_paths":
+        return bool(
+            len(refs) >= 2
+            and tools.intersection({"symbol", "ast_analyze"})
+            and tools.intersection({"search_repository", "read_file"})
+        )
+    if kind == "executable_test":
+        return bool(
+            tools.intersection({"test", "run_repository_checks"})
+            and ('"passed": true' in text or '"returncode": 0' in text)
+        )
+    if kind == "documented_contract":
+        return bool(
+            tools.intersection({
+                "read_file", "search_repository", "read_project_controls", "git_context",
+            })
+            and re.search(
+                r"\b(?:contract|must|shall|guarantee(?:d|s)?|always|never|non-null)\b",
+                text,
+            )
+        )
+    return False
 
 
 def collect_evidence(observations: List[dict]) -> Dict[str, dict]:
@@ -29,6 +90,14 @@ def collect_evidence(observations: List[dict]) -> Dict[str, dict]:
             values[str(result["evidence_id"])] = {
                 "evidence_id": result["evidence_id"],
                 "tool": result.get("tool", item.get("tool", "")),
+                "origin": str(
+                    item.get("origin")
+                    or (
+                        "protocol" if item.get("tool") == "protocol-requirement"
+                        else "automatic-preflight"
+                        if int(item.get("step", 0)) == 0 else "agent-tool"
+                    )
+                ),
                 "output_preview": json.dumps(
                     output, ensure_ascii=False, default=str
                 )[:2000],
@@ -67,6 +136,8 @@ class AgentLoop:
         started = time.monotonic()
         observations: List[dict] = list(initial_observations or [])
         nudged = False
+        correction_requested = False
+        invalid_action_retried = False
         starting_tokens = ledger.tokens_used(self.name)
         ledger.trace(
             self.name, "started", token_budget=self.token_budget,
@@ -136,9 +207,6 @@ class AgentLoop:
                     bool(item.get("ok")) and int(item.get("step", 0)) >= 1
                     for item in observations
                 )
-                # Ask once, then accept the answer. Asking until the step budget
-                # runs out would turn "there is genuinely nothing here" into a
-                # failed role, which is a worse outcome than an unverified pass.
                 if successful_tools < self.minimum_tool_calls and not nudged:
                     nudged = True
                     observation = {
@@ -152,59 +220,6 @@ class AgentLoop:
                     ledger.trace(
                         self.name, "minimum_tool_calls_not_met", step=step,
                         required=self.minimum_tool_calls, completed=successful_tools,
-                    )
-                    continue
-                required_evidence = {}
-                for item in observations:
-                    result = item.get("result")
-                    if not isinstance(result, dict):
-                        continue
-                    output = result.get("output")
-                    if isinstance(output, dict) and output.get("requires_resolution"):
-                        evidence_id = str(result.get("evidence_id", ""))
-                        if evidence_id:
-                            required_evidence[evidence_id] = str(
-                                output.get("resolution_question", "Resolve the counterexample.")
-                            )
-                successful_evidence = {
-                    str(item.get("result", {}).get("evidence_id", ""))
-                    for item in observations
-                    if item.get("ok") and isinstance(item.get("result"), dict)
-                }
-                resolved = set()
-                for item in action.get("evidence_resolutions") or []:
-                    if not isinstance(item, dict):
-                        continue
-                    evidence_id = str(item.get("evidence_id", ""))
-                    supporting = {
-                        str(value) for value in item.get("supporting_evidence_ids") or []
-                    }
-                    if (
-                        str(item.get("status", "")) == "refuted"
-                        and str(item.get("explanation", "")).strip()
-                        and any(
-                            value in successful_evidence and value != evidence_id
-                            for value in supporting
-                        )
-                    ):
-                        resolved.add(evidence_id)
-                for finding in action.get("findings") or []:
-                    if isinstance(finding, dict):
-                        resolved.update(str(value) for value in finding.get("evidence_ids") or [])
-                unresolved = sorted(set(required_evidence) - resolved)
-                if unresolved:
-                    observations.append({
-                        "step": step, "tool": "protocol-requirement", "ok": False,
-                        "error": (
-                            "Resolve each fixed counterexample before finishing. Return a finding "
-                            "that cites its evidence_id, or evidence_resolutions with status "
-                            "refuted and repository-backed reasoning. Unresolved: "
-                            + ", ".join(unresolved)
-                        ),
-                    })
-                    ledger.trace(
-                        self.name, "counterexample_resolution_missing", step=step,
-                        unresolved=unresolved,
                     )
                     continue
                 finding_resolutions = {
@@ -221,14 +236,22 @@ class AgentLoop:
                     for value in finding.get("evidence_ids") or []
                 }
                 uncited_findings = sorted(finding_resolutions - finding_citations)
-                if uncited_findings:
+                current_tokens = ledger.tokens_used(self.name) - starting_tokens
+                can_retry_finding = (
+                    step < self.max_steps - 1
+                    and current_tokens < int(self.token_budget * 0.7)
+                )
+                if (
+                    uncited_findings and not correction_requested
+                    and can_retry_finding
+                ):
+                    correction_requested = True
                     observations.append({
                         "step": step, "tool": "protocol-requirement", "ok": False,
                         "error": (
                             "An evidence_resolution with status finding must have a "
                             "corresponding structured Finding that cites the same evidence_id. "
-                            "Return the missing Finding or change the resolution to refuted "
-                            "with repository-backed counter-evidence. Inconsistent: "
+                            "Return the missing Finding. Inconsistent: "
                             + ", ".join(uncited_findings)
                         ),
                     })
@@ -237,13 +260,123 @@ class AgentLoop:
                         evidence_ids=uncited_findings,
                     )
                     continue
+                if uncited_findings:
+                    # Preserve a repeated positive signal without publishing an
+                    # unvalidated comment. Lead can route this high-risk unresolved
+                    # hypothesis through the existing revision path.
+                    hypotheses = list(action.get("hypotheses") or [])
+                    for evidence_id in uncited_findings:
+                        resolution = next(
+                            item for item in action.get("evidence_resolutions") or []
+                            if isinstance(item, dict)
+                            and str(item.get("evidence_id", "")) == evidence_id
+                        )
+                        explanation = str(
+                            resolution.get("explanation")
+                            or "The Worker identified positive evidence but did not return "
+                            "a valid structured Finding."
+                        )
+                        resolution["status"] = "unresolved"
+                        resolution["explanation"] = explanation
+                        resolution["required_proof"] = (
+                            "Return a structured Finding anchored to an exact added line, or "
+                            "provide invariant-level evidence that refutes this signal."
+                        )
+                        supporting = [
+                            str(value)
+                            for value in resolution.get("supporting_evidence_ids") or []
+                        ]
+                        if evidence_id not in supporting:
+                            supporting.append(evidence_id)
+                        resolution["supporting_evidence_ids"] = supporting
+                        hypotheses.append({
+                            "hypothesis_id": "deferred-finding:%s" % evidence_id,
+                            "claim": explanation,
+                            "status": "unresolved", "risk_level": "high",
+                            "explanation": explanation,
+                            "required_proof": resolution["required_proof"],
+                            "supporting_evidence_ids": supporting,
+                        })
+                    action["hypotheses"] = hypotheses
+                    ledger.trace(
+                        self.name, "finding_resolution_deferred", step=step,
+                        evidence_ids=uncited_findings,
+                    )
+                required_evidence = {}
+                for item in observations:
+                    result = item.get("result")
+                    if not isinstance(result, dict):
+                        continue
+                    output = result.get("output")
+                    if isinstance(output, dict) and output.get("requires_resolution"):
+                        evidence_id = str(result.get("evidence_id", ""))
+                        if evidence_id:
+                            required_evidence[evidence_id] = str(
+                                output.get("resolution_question", "Resolve the counterexample.")
+                            )
+                evidence = collect_evidence(observations)
+                successful_evidence = set(evidence)
+                resolved = set()
+                deferred = set()
+                for item in action.get("evidence_resolutions") or []:
+                    if not isinstance(item, dict):
+                        continue
+                    evidence_id = str(item.get("evidence_id", ""))
+                    supporting = {
+                        str(value) for value in item.get("supporting_evidence_ids") or []
+                    }
+                    status = str(item.get("status", "")).strip().lower()
+                    if (
+                        status == "refuted"
+                        and str(item.get("explanation", "")).strip()
+                        and str(item.get("proof_kind", "")).strip().lower()
+                        in REFUTATION_PROOF_KINDS
+                        and refutation_supported(
+                            str(item.get("proof_kind", "")),
+                            [value for value in supporting if value != evidence_id],
+                            evidence,
+                        )
+                    ):
+                        resolved.add(evidence_id)
+                    if (
+                        status == "unresolved"
+                        and str(item.get("explanation", "")).strip()
+                        and str(item.get("required_proof", "")).strip()
+                        and any(value in successful_evidence for value in supporting)
+                    ):
+                        deferred.add(evidence_id)
+                for finding in action.get("findings") or []:
+                    if isinstance(finding, dict):
+                        resolved.update(str(value) for value in finding.get("evidence_ids") or [])
+                unresolved = sorted(set(required_evidence) - resolved - deferred)
+                if unresolved:
+                    observations.append({
+                        "step": step, "tool": "protocol-requirement", "ok": False,
+                        "error": (
+                            "Resolve each fixed counterexample before finishing. Return a finding "
+                            "that cites its evidence_id; refute it with an allowed proof_kind "
+                            "and independent repository evidence; or mark it unresolved with "
+                            "required_proof and supporting evidence. Missing: "
+                            + ", ".join(unresolved)
+                        ),
+                    })
+                    ledger.trace(
+                        self.name, "counterexample_resolution_missing", step=step,
+                        unresolved=unresolved,
+                    )
+                    continue
                 if self.final_action_validator is not None:
                     candidate = dict(action)
                     candidate["_observations"] = observations
                     validation_error = str(
                         self.final_action_validator(candidate) or ""
                     ).strip()
+                    action.update({
+                        key: value for key, value in candidate.items()
+                        if not str(key).startswith("_")
+                    })
                     if validation_error:
+                        correction_requested = True
                         positive_evidence = sorted({
                             str(item.get("evidence_id", ""))
                             for item in action.get("evidence_resolutions") or []
@@ -286,6 +419,24 @@ class AgentLoop:
                 ledger.trace(self.name, "finished", step=step)
                 return action
             if kind != "tool":
+                # A syntactically valid JSON object can still omit the tiny
+                # action envelope. Repair that protocol slip once, on demand;
+                # normal runs pay no extra model call and repeated failures
+                # still fail closed.
+                if not invalid_action_retried and step < self.max_steps:
+                    invalid_action_retried = True
+                    observations.append({
+                        "step": step, "tool": "protocol-requirement", "ok": False,
+                        "error": (
+                            "Invalid action envelope. Return exactly one action: "
+                            "a tool action with action/tool/arguments, or a final "
+                            "action with action='final' and the role's required fields."
+                        ),
+                    })
+                    ledger.trace(
+                        self.name, "invalid_action_retry", step=step,
+                    )
+                    continue
                 raise ValueError("%s returned an invalid action" % self.name)
             tool_name = str(action.get("tool", ""))
             arguments = action.get("arguments") or {}

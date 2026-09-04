@@ -86,9 +86,27 @@ class SkillAwareClient:
                     "skill": "review-dangerous-calls",
                     "call_chain": [{"path": "a.py", "line": 1, "symbol": "dangerous_call"}],
                 }]}
-            return {"action": "final", "findings": []}
+            return {
+                "action": "final", "findings": [],
+                "hypotheses": [{
+                    "hypothesis_id": "hyp-1",
+                    "claim": "The project-specific dangerous call may be absent.",
+                    "status": "unresolved",
+                    "explanation": "This fixture has no repository checkout.",
+                    "required_proof": "Inspect the project API contract.",
+                }],
+            }
         if role == "correctness-reliability":
-            return {"action": "final", "findings": []}
+            return {
+                "action": "final", "findings": [],
+                "hypotheses": [{
+                    "hypothesis_id": "hyp-1",
+                    "claim": "The change may alter correctness behavior.",
+                    "status": "unresolved",
+                    "explanation": "This fixture has no repository checkout.",
+                    "required_proof": "Inspect callers and tests.",
+                }],
+            }
         if role == "critic":
             return {"action": "final", "decisions": [{
                 "finding_index": index, "accepted": True, "objections": [],

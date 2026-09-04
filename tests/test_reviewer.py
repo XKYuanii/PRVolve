@@ -182,6 +182,133 @@ class LocalReviewerTests(unittest.TestCase):
         )
         self.assertEqual([], fixed_findings)
 
+    def test_detects_removed_empty_sequence_guards_but_not_restored_guards(self):
+        regression = (
+            "--- a/parser.py\n+++ b/parser.py\n@@ -1,3 +1,3 @@\n"
+            "-if pattern.endswith('/'):\n+if pattern[-1] == '/':\n"
+            " value = max(items, default=0)\n"
+            "-limit = max(items, default=0)\n+limit = max(items)\n"
+        )
+        fixed = (
+            "--- a/parser.py\n+++ b/parser.py\n@@ -1,2 +1,2 @@\n"
+            "-if pattern[-1] == '/':\n+if pattern.endswith('/'):\n"
+            "-limit = max(items)\n+limit = max(items, default=0)\n"
+        )
+
+        findings = LocalRuleReviewer().review(
+            regression, parse_unified_diff(regression),
+        )
+        fixed_findings = LocalRuleReviewer().review(fixed, parse_unified_diff(fixed))
+
+        self.assertEqual(
+            ["COR-EMPTY-SEQUENCE-ACCESS"], [item.rule_id for item in findings],
+        )
+        self.assertEqual([], fixed_findings)
+
+    def test_detects_direct_mapping_access_replacing_optional_lookup(self):
+        regression = (
+            "--- a/client.py\n+++ b/client.py\n@@ -1,2 +1,2 @@\n"
+            "-status = reply.get('status')\n+status = reply['status']\n"
+            " return status\n"
+        )
+        fixed = (
+            "--- a/client.py\n+++ b/client.py\n@@ -1,2 +1,2 @@\n"
+            "-status = reply['status']\n+status = reply.get('status')\n"
+            " return status\n"
+        )
+
+        findings = LocalRuleReviewer().review(
+            regression, parse_unified_diff(regression),
+        )
+
+        self.assertEqual(
+            ["COR-MISSING-MAPPING-GUARD"], [item.rule_id for item in findings],
+        )
+        self.assertEqual(
+            [], LocalRuleReviewer().review(fixed, parse_unified_diff(fixed)),
+        )
+
+    def test_detects_assignment_moved_outside_non_none_guard(self):
+        regression = (
+            "--- a/serializer.py\n+++ b/serializer.py\n@@ -1,3 +1,2 @@\n"
+            "-if self.name is not None:\n"
+            "-    proto.name = self.name\n"
+            "+proto.name = self.name\n"
+            " return proto\n"
+        )
+        fixed = (
+            "--- a/serializer.py\n+++ b/serializer.py\n@@ -1,2 +1,3 @@\n"
+            "-proto.name = self.name\n"
+            "+if self.name is not None:\n"
+            "+    proto.name = self.name\n"
+            " return proto\n"
+        )
+
+        findings = LocalRuleReviewer().review(
+            regression, parse_unified_diff(regression),
+        )
+
+        self.assertEqual(
+            ["COR-OPTIONAL-ASSIGNMENT-GUARD"],
+            [item.rule_id for item in findings],
+        )
+        self.assertEqual(
+            [], LocalRuleReviewer().review(fixed, parse_unified_diff(fixed)),
+        )
+
+    def test_detects_none_and_empty_value_semantics_regression(self):
+        regression = (
+            "--- a/options.py\n+++ b/options.py\n@@ -1,2 +1,2 @@\n"
+            "-if default is not None:\n+if default:\n"
+            "     apply(default)\n"
+        )
+        fixed = (
+            "--- a/options.py\n+++ b/options.py\n@@ -1,2 +1,2 @@\n"
+            "-if default:\n+if default is not None:\n"
+            "     apply(default)\n"
+        )
+
+        findings = LocalRuleReviewer().review(
+            regression, parse_unified_diff(regression),
+        )
+
+        self.assertEqual(
+            ["COR-EMPTY-VALUE-SEMANTICS"], [item.rule_id for item in findings],
+        )
+        self.assertEqual(
+            [], LocalRuleReviewer().review(fixed, parse_unified_diff(fixed)),
+        )
+
+        removed_empty_string_contract = (
+            "--- a/source.py\n+++ b/source.py\n@@ -1,2 +1,2 @@\n"
+            "-if item.name is None or str(item.name).strip() == '':\n"
+            "+if item.name is None:\n"
+            "     use_fallback()\n"
+        )
+        self.assertEqual(
+            ["COR-EMPTY-VALUE-SEMANTICS"],
+            [
+                item.rule_id for item in LocalRuleReviewer().review(
+                    removed_empty_string_contract,
+                    parse_unified_diff(removed_empty_string_contract),
+                )
+            ],
+        )
+
+    def test_empty_value_rule_does_not_guess_an_unknown_truthiness_contract(self):
+        intentional_empty_filter = (
+            "--- a/filter.py\n+++ b/filter.py\n@@ -1,2 +1,2 @@\n"
+            "-if filter_by_error_flag is not None:\n"
+            "+if filter_by_error_flag:\n"
+            "     filter_rows()\n"
+        )
+
+        self.assertEqual(
+            [], LocalRuleReviewer().review(
+                intentional_empty_filter, parse_unified_diff(intentional_empty_filter),
+            ),
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

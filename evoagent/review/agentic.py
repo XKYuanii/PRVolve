@@ -13,6 +13,7 @@ individual assignment, which is where a review actually spends its money.
 """
 import json
 import os
+import re
 import threading
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -20,14 +21,21 @@ from contextlib import contextmanager
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional, Set
 
-from ..agents.loop import AgentLoop
-from ..agents.parsing import parse_findings, worker_final_validation_error
+from ..agents.loop import AgentLoop, collect_evidence
+from ..agents.parsing import (
+    assignment_requirements, downgrade_unsupported_conclusions, normalize_hypotheses,
+    normalize_requirement_resolutions, parse_findings,
+    worker_final_validation_error, worker_handoffs,
+)
 from ..agents.prompts import (
     CRITIC_PROMPT, LEAD_PROMPT, RELIABILITY_PROMPT, ROLE_PERMISSIONS,
     RULE_ID_GUIDANCE, SECURITY_PROMPT,
 )
 from ..core.diff_parser import ParsedDiff
 from ..core.gates import FindingGate
+from ..core.finding_policy import (
+    claim_specific_high_risk_evidence_refs, repository_evidence_refs,
+)
 from ..core.models import ComponentKind, Finding
 from ..core.modes import component, resolve_mode
 from ..llm.context import ContextManager
@@ -181,6 +189,7 @@ class AgenticReviewer(Reviewer):
                 session, run, delegations, planned["scanner_findings"], 0,
                 memory_context,
             )
+            worker_history = [dict(item) for item in worker_results.values()]
             max_rounds = self._max_revision_rounds()
             assessments: List[dict] = []
             revision_results: Dict[str, dict] = {}
@@ -221,6 +230,11 @@ class AgenticReviewer(Reviewer):
                     revision["revision_round"] = index + 1
                     revision["lead_feedback"] = request["guidance"]
                     revision["required_evidence"] = request["required_evidence"]
+                    revision["handoff_ids"] = request.get("handoff_ids") or []
+                    revision["evidence_targets"] = request.get("evidence_targets") or []
+                    revision["prior_worker_result"] = worker_results.get(
+                        request["assignment_id"], {}
+                    )
                     revisions.append(revision)
                 revised = self._run_assignments(
                     session, run, revisions, planned["scanner_findings"], index + 1,
@@ -228,8 +242,12 @@ class AgenticReviewer(Reviewer):
                 )
                 for revision in revisions:
                     key = revision["run_id"]
-                    result = revised[key]
+                    result = self._merge_worker_revision(
+                        worker_results.get(revision["assignment_id"], {}),
+                        revised[key],
+                    )
                     revision_results[key] = result
+                    worker_history.append(dict(result))
                     worker_results[revision["assignment_id"]] = result
                     run.ledger.trace(
                         "lead-session", "revision_completed",
@@ -239,6 +257,7 @@ class AgenticReviewer(Reviewer):
                     )
             return {
                 "worker_results": worker_results,
+                "worker_history": worker_history,
                 "lead_assessments": assessments,
                 "revision_results": revision_results,
                 "stop_reason": stop_reason or "lead-final",
@@ -298,8 +317,8 @@ class AgenticReviewer(Reviewer):
             )
             collaboration = self._collaboration(
                 run, planned, executed, lead_final, publication_decisions,
-                critic_decisions,
-                len(rule_findings), before_critic, len(accepted), suggestions,
+                critic_decisions, planned["scanner_findings"],
+                before_critic, len(accepted), suggestions,
             )
             gated = self.gate.apply(accepted, session.parsed)
             run.ledger.trace("evidence-gate", "completed", **gated.checks)
@@ -466,9 +485,13 @@ class AgenticReviewer(Reviewer):
     @staticmethod
     def _collaboration(
         run, planned, executed, lead_final, publication_decisions, critic_decisions,
-        scanner_count, before_critic, accepted_count, suggestions,
+        scanner_findings, before_critic, accepted_count, suggestions,
     ) -> Dict[str, Any]:
         delegations = planned["delegations"]
+        public_worker = lambda item: {
+            key: value for key, value in dict(item).items()
+            if not str(key).startswith("_")
+        }
         return {
             "protocol": "lead-workers",
             "roles": [
@@ -485,9 +508,17 @@ class AgenticReviewer(Reviewer):
                 name for assignment in delegations
                 for name in assignment.get("skills") or []
             }),
-            "worker_results": list(executed["worker_results"].values()),
-            "revision_results": list(executed["revision_results"].values()),
-            "scanner_findings": scanner_count,
+            "worker_results": [
+                public_worker(item) for item in executed["worker_results"].values()
+            ],
+            "worker_history": [
+                public_worker(item) for item in executed.get("worker_history") or []
+            ],
+            "revision_results": [
+                public_worker(item) for item in executed["revision_results"].values()
+            ],
+            "scanner_findings": len(scanner_findings),
+            "scanner_finding_details": list(scanner_findings),
             "candidate_findings_before_critic": before_critic,
             "accepted_findings": accepted_count,
             "suggested_findings": [item.to_dict() for item in suggestions],
@@ -556,10 +587,33 @@ class AgenticReviewer(Reviewer):
     def _critic(
         self, session, run, candidates, objective, memory_context,
     ) -> Dict[str, Any]:
-        result = self._run_critic(
-            session.diff, candidates, objective, run.suite, run.ledger,
-            session.task_id, memory_context,
-        )
+        try:
+            result = self._run_critic(
+                session.diff, candidates, objective, run.suite, run.ledger,
+                session.task_id, memory_context,
+            )
+        except Exception as exc:
+            # A malformed/timeout Critic response must not erase the Worker
+            # audit trail or fail the whole review. Fail closed: no model
+            # candidate is publication-ready without an explicit decision.
+            run.ledger.trace(
+                "critic", "critic_failed_closed", error=str(exc)[:1000],
+                candidates=len(candidates),
+            )
+            return {
+                "candidates": [item.to_dict() for item in candidates],
+                "decisions": [{
+                    "finding_index": index, "accepted": False,
+                    "publication_ready": False,
+                    "introduced_by_diff": False, "reproducible": False,
+                    "evidence_sufficient": False,
+                    "would_comment_on_real_pr": False,
+                    "recommended_confidence_adjustment": 0.0,
+                    "objections": [
+                        "Critic failed closed: " + str(exc)[:500]
+                    ],
+                } for index, _item in enumerate(candidates)],
+            }
         kept, decisions = apply_critic(result, candidates)
         return {
             "candidates": [item.to_dict() for item in kept],
@@ -570,7 +624,7 @@ class AgenticReviewer(Reviewer):
         self, session, run, delegations, worker_results, candidates,
         index, max_rounds, memory_context,
     ) -> Dict[str, Any]:
-        return self._run_lead(
+        decision = self._run_lead(
             "assess-workers", {
                 **self._model_diff(
                     session.diff, session.task_id, "lead:assess-workers",
@@ -584,6 +638,392 @@ class AgenticReviewer(Reviewer):
                 "recalled_memory": memory_context,
             }, run.suite, run.ledger, session.task_id,
         )
+        return self._complete_assessment_protocol(
+            decision, delegations, worker_results, max_rounds - index,
+        )
+
+    @staticmethod
+    def _merge_worker_revision(previous: dict, current: dict) -> dict:
+        """Make evidence revisions monotonic unless they prove a refutation.
+
+        A revision is a refinement of the same assignment, not a fresh vote.
+        Model truncation or an unresolved evidence mission must not erase an
+        already structured candidate. A proof-backed refuted hypothesis at the
+        candidate's exact location is the explicit removal path.
+        """
+        if not previous:
+            return current
+        merged = dict(current)
+        if current.get("status") == "failed":
+            merged["hypotheses"] = list(previous.get("hypotheses") or [])
+            merged["requirement_resolutions"] = list(
+                previous.get("requirement_resolutions") or []
+            )
+            merged["handoffs"] = list(previous.get("handoffs") or [])
+        refuted_locations = {
+            str(item.get("location") or "").strip()
+            for item in current.get("hypotheses") or []
+            if isinstance(item, dict)
+            and item.get("status") == "refuted"
+            and item.get("proof_kind")
+        }
+        prior_findings = [
+            item for item in previous.get("findings") or []
+            if "%s:%s" % (item.get("path", ""), item.get("line", ""))
+            not in refuted_locations
+        ]
+        merged["findings"] = [
+            item.to_dict() for item in merge_findings(restore_findings(
+                prior_findings + list(current.get("findings") or [])
+            ))
+        ]
+
+        def merge_evidence(key):
+            by_id = {}
+            for item in list(previous.get(key) or []) + list(current.get(key) or []):
+                if not isinstance(item, dict):
+                    continue
+                identity = str(item.get("evidence_id") or "")
+                if identity:
+                    by_id[identity] = item
+            return list(by_id.values())[:40]
+
+        merged["evidence_inventory"] = merge_evidence("evidence_inventory")
+        merged["_evidence_records"] = merge_evidence("_evidence_records")
+        return merged
+
+    @staticmethod
+    def _pending_worker_review_items(worker_results) -> List[dict]:
+        """Return risks that still need routing or a bounded evidence pass.
+
+        High-risk unknowns always qualify. A normal-risk unknown qualifies only
+        when the Worker anchored it to a concrete changed location; that keeps a
+        generic ``protocol-fallback`` from spending a revision while preserving
+        a real, testable hypothesis. Structured Findings also get one evidence
+        pass when they cite source context but lack behavioral/cross-call proof.
+        """
+        handled = {
+            str(value)
+            for result in worker_results.values()
+            if result.get("status") == "completed"
+            for value in result.get("handled_handoff_ids") or []
+        }
+        values, seen = [], set()
+        for result in worker_results.values():
+            for item in result.get("handoffs") or []:
+                item_id = str(item.get("handoff_id") or "")
+                if not item_id or item_id in handled or item_id in seen:
+                    continue
+                seen.add(item_id)
+                values.append(dict(item))
+            for hypothesis in result.get("hypotheses") or []:
+                if hypothesis.get("status") != "unresolved":
+                    continue
+                location = str(hypothesis.get("location") or "").strip()
+                location_path = location.rsplit(":", 1)[0].replace("\\", "/").lower()
+                if any(
+                    part in location_path
+                    for part in ("/test/", "/tests/", "tests/", "test_")
+                ):
+                    continue
+                concrete_location = bool(re.match(r"^.+:\d+$", location))
+                high_risk = hypothesis.get("risk_level") == "high"
+                if not high_risk and (
+                    not concrete_location
+                    or not result.get("repository_context_available", False)
+                ):
+                    continue
+                item_id = "%s:%s" % (
+                    result.get("assignment_id", ""),
+                    hypothesis.get("hypothesis_id", "hypothesis"),
+                )
+                if item_id in handled or item_id in seen:
+                    continue
+                seen.add(item_id)
+                target_worker = str(hypothesis.get("target_worker") or "")
+                domain = str(hypothesis.get("domain") or "").lower()
+                if not target_worker and domain in {
+                    "correctness", "reliability", "correctness-reliability",
+                }:
+                    target_worker = "correctness-reliability"
+                if not target_worker:
+                    target_worker = str(result.get("worker") or "")
+                values.append({
+                    "handoff_id": item_id,
+                    "source_assignment_id": result.get("assignment_id", ""),
+                    "source_worker": result.get("worker", ""),
+                    "target_worker": target_worker,
+                    "claim": hypothesis.get("claim", ""),
+                    "location": hypothesis.get("location", ""),
+                    "explanation": hypothesis.get("explanation", ""),
+                    "required_proof": hypothesis.get("required_proof", ""),
+                    "supporting_evidence_ids": hypothesis.get(
+                        "supporting_evidence_ids", []
+                    ),
+                    "origin": hypothesis.get("origin", "worker"),
+                    "kind": (
+                        "high-risk-unresolved" if high_risk
+                        else "evidence-gap-unresolved"
+                    ),
+                })
+            for finding in restore_findings(result.get("findings") or []):
+                if (
+                    not result.get("repository_context_available", False)
+                    or str(finding.source or "").startswith("agent-skill:")
+                ):
+                    continue
+                repository_refs = repository_evidence_refs(finding)
+                claim_refs = claim_specific_high_risk_evidence_refs(finding)
+                if repository_refs and claim_refs:
+                    continue
+                item_id = "%s:evidence:%s:%s:%s" % (
+                    result.get("assignment_id", ""), finding.path,
+                    finding.line, finding.rule_id,
+                )
+                if item_id in handled or item_id in seen:
+                    continue
+                seen.add(item_id)
+                missing = []
+                if not repository_refs:
+                    missing.append("repository trigger/reachability evidence")
+                if not claim_refs:
+                    missing.append("behavioral witness or corroborated cross-call path")
+                values.append({
+                    "handoff_id": item_id,
+                    "source_assignment_id": result.get("assignment_id", ""),
+                    "source_worker": result.get("worker", ""),
+                    "target_worker": result.get("worker", ""),
+                    "claim": "%s. %s" % (finding.title, finding.explanation),
+                    "location": "%s:%s" % (finding.path, finding.line),
+                    "explanation": (
+                        "The Worker produced a Finding, but its proof bundle is not yet "
+                        "strong enough for blind publication review."
+                    ),
+                    "required_proof": "Obtain " + " and ".join(missing) + ".",
+                    "supporting_evidence_ids": [
+                        str(item.get("evidence_id"))
+                        for item in finding.evidence_refs
+                        if isinstance(item, dict) and item.get("evidence_id")
+                    ],
+                    "origin": "evidence-gap",
+                    "kind": "evidence-gap-finding",
+                })
+        priority = {
+            "evidence-gap-finding": 0,
+            "high-risk-unresolved": 1,
+            "evidence-gap-unresolved": 2,
+        }
+        selected, selected_keys, per_worker = [], set(), {}
+        for item in sorted(
+            values,
+            key=lambda value: (
+                priority.get(str(value.get("kind") or ""), 0),
+                str(value.get("location") or ""),
+                0 if value.get("target_worker") == "correctness-reliability" else 1,
+                str(value.get("handoff_id") or ""),
+            ),
+        ):
+            worker = str(item.get("target_worker") or "")
+            location = str(item.get("location") or "").strip()
+            key = location or (worker, str(item.get("handoff_id") or ""))
+            if key in selected_keys or per_worker.get(worker, 0) >= 2:
+                continue
+            selected_keys.add(key)
+            per_worker[worker] = per_worker.get(worker, 0) + 1
+            selected.append(item)
+        return selected
+
+    @staticmethod
+    def _target_assignment(item, delegations) -> Optional[dict]:
+        targets = [
+            assignment for assignment in delegations
+            if assignment.get("worker") == item.get("target_worker")
+        ]
+        if not targets:
+            return None
+        location = str(item.get("location") or "")
+        path = location.rsplit(":", 1)[0] if ":" in location else location
+        for assignment in targets:
+            if path and path in (assignment.get("files") or []):
+                return assignment
+        return targets[0]
+
+    @classmethod
+    def _complete_assessment_protocol(
+        cls, raw, delegations, worker_results, remaining_rounds,
+    ) -> Dict[str, Any]:
+        """Make Lead handling of handoffs explicit without adding another role."""
+        decision = dict(raw or {})
+        pending = cls._pending_worker_review_items(worker_results)
+        pending_by_id = {
+            str(item.get("handoff_id")): item for item in pending
+            if item.get("handoff_id")
+        }
+        # Lead prose can be useful, but a revision tied to protocol items is
+        # rebuilt below from the bounded queue. This prevents the model from
+        # copying every hypothesis into one unexecutable mega-assignment.
+        requests = []
+        if remaining_rounds > 0:
+            for item in decision.get("revision_requests") or []:
+                if not isinstance(item, dict) or item.get("handoff_ids"):
+                    continue
+                guidance = str(item.get("guidance") or "").strip()
+                if not guidance:
+                    continue
+                requests.append({
+                    "assignment_id": str(item.get("assignment_id") or "")[:100],
+                    "worker": str(item.get("worker") or "")[:100],
+                    "guidance": guidance[:600],
+                    "required_evidence": [
+                        str(value)[:200]
+                        for value in item.get("required_evidence") or []
+                        if str(value).strip()
+                    ][:2],
+                    "handoff_ids": [], "evidence_targets": [],
+                })
+        provided = {}
+        for item in decision.get("handoff_decisions") or []:
+            if not isinstance(item, dict):
+                continue
+            item_id = str(item.get("handoff_id") or "")
+            action = str(item.get("action") or "").strip().lower()
+            reason = str(item.get("reason") or "").strip()
+            if item_id in pending_by_id and action in {"revise", "defer"} and reason:
+                provided[item_id] = {
+                    "handoff_id": item_id,
+                    "action": action,
+                    "target_assignment_id": str(
+                        item.get("target_assignment_id") or ""
+                    )[:100],
+                    "reason": reason[:1000],
+                    "source": "lead",
+                }
+
+        def ensure_request(review_item, target, item_id):
+            request = next(
+                (
+                    item for item in requests
+                    if str(item.get("assignment_id") or "")
+                    == target["assignment_id"]
+                ),
+                None,
+            )
+            if request is None:
+                request = {
+                    "assignment_id": target["assignment_id"],
+                    "worker": target["worker"],
+                    "guidance": "",
+                    "required_evidence": [],
+                    "handoff_ids": [],
+                    "evidence_targets": [],
+                }
+                requests.append(request)
+            handoff_ids = [
+                str(value) for value in request.get("handoff_ids") or []
+                if str(value).strip()
+            ]
+            if item_id not in handoff_ids:
+                handoff_ids.append(item_id)
+            request["handoff_ids"] = handoff_ids[:20]
+            guidance = (
+                "Resolve Worker evidence target %s: %s %s Evidence still needed: %s "
+                "Build a three-part proof: allowed trigger, unguarded reachability, and "
+                "deterministic failure/wrong-result contract. Preserve the prior conclusion "
+                "unless invariant-level counter-evidence refutes it."
+                % (
+                    item_id, str(review_item.get("claim") or "").strip(),
+                    str(review_item.get("explanation") or "").strip(),
+                    str(review_item.get("required_proof") or "").strip(),
+                )
+            ).strip()
+            if review_item.get("origin") == "protocol-downgrade":
+                guidance += (
+                    " The protocol rejected the prior certainty. If the described failure "
+                    "path is reachable, return a structured Finding anchored to an exact added "
+                    "line. Refute it only with invariant-level counter-evidence."
+                )
+            prior_guidance = str(request.get("guidance") or "").strip()
+            if guidance not in prior_guidance:
+                request["guidance"] = (
+                    (prior_guidance + "\n" + guidance).strip()[:2000]
+                )
+            required = [
+                str(value) for value in request.get("required_evidence") or []
+                if str(value).strip()
+            ]
+            required_item = "Resolve evidence target %s: %s" % (
+                item_id,
+                str(review_item.get("required_proof") or review_item.get("claim") or "")
+            )
+            if required_item not in required:
+                required.append(required_item)
+            request["required_evidence"] = required[:20]
+            location = str(review_item.get("location") or "").strip()
+            path, separator, rendered_line = location.rpartition(":")
+            if separator and path and rendered_line.isdigit():
+                targets = [
+                    dict(value) for value in request.get("evidence_targets") or []
+                    if isinstance(value, dict)
+                ]
+                if not any(
+                    str(value.get("evidence_target_id") or "") == item_id
+                    for value in targets
+                ):
+                    targets.append({
+                        "evidence_target_id": item_id,
+                        "path": path,
+                        "line": int(rendered_line),
+                        "claim": str(review_item.get("claim") or "")[:2000],
+                        "required_proof": str(
+                            review_item.get("required_proof") or ""
+                        )[:1000],
+                        "kind": str(review_item.get("kind") or "")[:100],
+                        "supporting_evidence_ids": [
+                            str(value)[:200]
+                            for value in review_item.get(
+                                "supporting_evidence_ids"
+                            ) or []
+                            if str(value).strip()
+                        ][:8],
+                    })
+                request["evidence_targets"] = targets[:12]
+
+        routed = []
+        for item_id, item in pending_by_id.items():
+            target = cls._target_assignment(item, delegations)
+            current = provided.get(item_id)
+            if current and current["action"] == "defer":
+                routed.append(current)
+                continue
+            if remaining_rounds > 0 and target is not None:
+                ensure_request(item, target, item_id)
+                routed.append({
+                    "handoff_id": item_id,
+                    "action": "revise",
+                    "target_assignment_id": target["assignment_id"],
+                    "reason": (
+                        current["reason"] if current
+                        else "Protocol guard routed an unhandled Worker risk/evidence gap to its owner."
+                    ),
+                    "source": current["source"] if current else "protocol-guard",
+                })
+            else:
+                reason = (
+                    "No revision round remains; preserve this item as unresolved."
+                    if remaining_rounds <= 0
+                    else "No enabled assignment exists for target Worker %s."
+                    % item.get("target_worker", "")
+                )
+                routed.append({
+                    "handoff_id": item_id,
+                    "action": "defer",
+                    "target_assignment_id": "",
+                    "reason": current["reason"] if current else reason,
+                    "source": current["source"] if current else "protocol-guard",
+                })
+        decision["revision_requests"] = requests
+        decision["handoff_decisions"] = routed
+        return decision
 
     def _arbitrate(
         self, session, run, candidates, critic_decisions, worker_results,
@@ -671,16 +1111,53 @@ class AgenticReviewer(Reviewer):
             findings = parse_findings(
                 raw_result, parsed, assignment["worker"], validated_skill_names,
             )
+            hypotheses = normalize_hypotheses(raw_result.get("hypotheses"))
+            requirement_resolutions = normalize_requirement_resolutions(
+                raw_result.get("requirement_resolutions")
+            )
+            evidence_records = list(collect_evidence(
+                raw_result.get("_observations") or []
+            ).values())
+            evidence_inventory = [
+                {
+                    "evidence_id": item.get("evidence_id", ""),
+                    "tool": item.get("tool", ""),
+                    "origin": item.get("origin", ""),
+                    "output_preview": item.get("output_preview", ""),
+                }
+                for item in evidence_records
+            ]
             result = {
                 "assignment_id": assignment["assignment_id"],
                 "run_id": run_id, "worker": assignment["worker"],
                 "revision_round": revision_round, "status": "completed",
+                "repository_context_available": bool(run.suite.repository_available),
                 "findings": [item.to_dict() for item in findings], "error": "",
+                "assignment_requirements": assignment_requirements(assignment),
+                "requirement_resolutions": requirement_resolutions,
+                "hypotheses": hypotheses,
+                "handoffs": worker_handoffs(
+                    hypotheses, requirement_resolutions, assignment,
+                ),
+                "handled_handoff_ids": [
+                    str(value)[:200]
+                    for value in assignment.get("handoff_ids") or []
+                    if str(value).strip()
+                ][:20],
+                "evidence_inventory": evidence_inventory,
+                # Kept private for the next revision invocation. Public reports
+                # expose only evidence_inventory and Finding citations.
+                "_evidence_records": evidence_records[:40],
+                "protocol_downgrades": list(
+                    raw_result.get("protocol_downgrades") or []
+                )[:30],
                 "evidence_resolutions": [
                     {
                         "evidence_id": str(item.get("evidence_id", ""))[:200],
                         "status": str(item.get("status", ""))[:40],
                         "explanation": str(item.get("explanation", ""))[:2000],
+                        "proof_kind": str(item.get("proof_kind", ""))[:80],
+                        "required_proof": str(item.get("required_proof", ""))[:1000],
                         "supporting_evidence_ids": [
                             str(value)[:200]
                             for value in item.get("supporting_evidence_ids") or []
@@ -695,7 +1172,14 @@ class AgenticReviewer(Reviewer):
                 "assignment_id": assignment["assignment_id"],
                 "run_id": run_id, "worker": assignment["worker"],
                 "revision_round": revision_round, "status": "failed",
+                "repository_context_available": bool(run.suite.repository_available),
                 "findings": [], "error": str(exc)[:1000],
+                "assignment_requirements": assignment_requirements(assignment),
+                "requirement_resolutions": [], "hypotheses": [],
+                "handoffs": [], "handled_handoff_ids": [],
+                "evidence_inventory": [], "_evidence_records": [],
+                "evidence_resolutions": [],
+                "protocol_downgrades": [],
             }
         ledger.trace(
             "lead-session", "worker_reported",
@@ -704,6 +1188,52 @@ class AgenticReviewer(Reviewer):
             findings=len(result["findings"]), revision_round=revision_round,
         )
         return result
+
+    @staticmethod
+    def _worker_validator(parsed, assignment, repository_available):
+        def validate(action):
+            downgrades = downgrade_unsupported_conclusions(action)
+            if downgrades:
+                action.setdefault("protocol_downgrades", []).extend(downgrades)
+            error = worker_final_validation_error(
+                action, parsed, demand_hypotheses=True,
+                assignment=assignment,
+                repository_available=repository_available,
+            )
+            if error and not (action.get("findings") or action.get("hypotheses")):
+                action["hypotheses"] = [{
+                    "hypothesis_id": "protocol-fallback",
+                    "claim": (
+                        "Worker returned no traceable conclusion for assignment: "
+                        + str(assignment.get("objective") or "assigned review")
+                    )[:2000],
+                    "status": "unresolved", "risk_level": "normal",
+                    "explanation": (
+                        "The final response contained neither a Finding nor a settled "
+                        "hypothesis; the protocol preserves this as unknown, not safe."
+                    ),
+                    "required_proof": (
+                        "Re-run the assigned investigation and provide a Finding, invariant-level "
+                        "refutation, or explicit domain handoff."
+                    ),
+                    "origin": "protocol-fallback",
+                }]
+                action["requirement_resolutions"] = [{
+                    "requirement_id": item["requirement_id"],
+                    "status": "unresolved",
+                    "explanation": (
+                        "The Worker did not return a traceable answer to this Lead requirement."
+                    ),
+                    "required_proof": item["question"],
+                } for item in assignment_requirements(assignment)]
+                error = worker_final_validation_error(
+                    action, parsed, demand_hypotheses=True,
+                    assignment=assignment,
+                    repository_available=repository_available,
+                )
+            return error
+
+        return validate
 
     def _run_worker(
         self, session, run, assignment, scanner_findings, memory_context,
@@ -737,14 +1267,63 @@ class AgenticReviewer(Reviewer):
             context_manager=self.context_manager,
             working_memory_supplier=working_memory_supplier,
             observation_sink=observation_sink,
-            minimum_tool_calls=int(suite.repository_available),
-            final_action_validator=lambda action: worker_final_validation_error(
-                action, parsed,
+            # Repository preflight already supplies factual observations. The
+            # Worker remains free to call a tool for a missing proof, but a
+            # completed answer is not rejected merely to manufacture a turn.
+            minimum_tool_calls=0,
+            final_action_validator=self._worker_validator(
+                parsed, assignment, suite.repository_available,
             ),
         )
+        prior_worker_result = assignment.get("prior_worker_result") or {}
+        evidence_target_ids = {
+            str(value)
+            for target in assignment.get("evidence_targets") or []
+            if isinstance(target, dict)
+            for value in target.get("supporting_evidence_ids") or []
+            if str(value).strip()
+        }
+        prior_hypotheses = list(prior_worker_result.get("hypotheses") or [])
+        focused_hypotheses = [
+            item for item in prior_hypotheses
+            if any(
+                str(target.get("evidence_target_id") or "").endswith(
+                    ":" + str(item.get("hypothesis_id") or "")
+                )
+                for target in assignment.get("evidence_targets") or []
+                if isinstance(target, dict)
+            )
+        ] or prior_hypotheses[:4]
         context = {
-            "lead_assignment": assignment,
+            "lead_assignment": {
+                key: value for key, value in assignment.items()
+                if key != "prior_worker_result"
+            },
+            "assignment_requirements": assignment_requirements(assignment),
             "lead_feedback": assignment.get("lead_feedback", ""),
+            "evidence_mission": list(assignment.get("evidence_targets") or []),
+            "prior_worker_result": ({
+                "findings": [
+                    {
+                        key: value for key, value in item.items()
+                        if key != "evidence_refs"
+                    }
+                    for item in prior_worker_result.get("findings") or []
+                    if isinstance(item, dict)
+                ],
+                "hypotheses": focused_hypotheses[:4],
+                "requirement_resolutions": list(
+                    prior_worker_result.get("requirement_resolutions") or []
+                ),
+                "evidence_inventory": [{
+                    "evidence_id": item.get("evidence_id", ""),
+                    "tool": item.get("tool", ""),
+                    "origin": item.get("origin", ""),
+                    "output_preview": str(item.get("output_preview", ""))[:500],
+                } for item in prior_worker_result.get("evidence_inventory") or []
+                if str(item.get("evidence_id") or "") in evidence_target_ids
+                ][:8],
+            } if prior_worker_result else {}),
             **self._model_diff(
                 session.diff, session.task_id, "%s:assignment" % worker,
                 focus_files=assignment.get("files") or parsed.files,
@@ -762,7 +1341,11 @@ class AgenticReviewer(Reviewer):
             "active_agent_skills": [skill.runtime_entry() for skill in selected_skills],
             "instruction": (
                 "Report only to the Lead. Return final findings with exact changed-line "
-                "evidence and address every required_evidence item. A Finding path/line "
+                "evidence and address every assignment_requirements ID exactly once. "
+                "Use a handoff hypothesis for a credible risk owned by the other Worker. "
+                "On an evidence revision, preserve the prior risk and cite prior evidence IDs "
+                "that remain valid while filling the trigger/reachability/failure gaps. "
+                "A Finding path/line "
                 "must come from scoreable_added_lines; read_file start_line does not "
                 "renumber its content."
             ),
@@ -792,10 +1375,26 @@ class AgenticReviewer(Reviewer):
                 },
                 read_skill_resource,
             ))
-        initial_observations = repository_preflight(
+        initial_observations = []
+        for item in prior_worker_result.get("_evidence_records") or []:
+            if not isinstance(item, dict) or not item.get("evidence_id"):
+                continue
+            if str(item.get("evidence_id") or "") not in evidence_target_ids:
+                continue
+            initial_observations.append({
+                "step": 0, "tool": item.get("tool", "prior-worker-evidence"),
+                "ok": True, "origin": "prior-worker",
+                "result": {
+                    "evidence_id": item.get("evidence_id"),
+                    "tool": item.get("tool", ""),
+                    "output": item.get("output"),
+                },
+                "reason": "evidence carried forward from the prior Worker pass",
+            })
+        initial_observations.extend(repository_preflight(
             assignment, parsed, tools,
             repository_available=suite.repository_available,
-        )
+        ))
         return role.run(
             json.dumps(context, ensure_ascii=False),
             tools, ledger, initial_observations=initial_observations,
@@ -804,6 +1403,10 @@ class AgenticReviewer(Reviewer):
     def _scan_findings(self, diff, parsed, ledger, scanners=None):
         started = time.monotonic()
         findings = self.rules.review(diff, parsed)
+        for finding in findings:
+            for evidence in finding.evidence_refs:
+                if isinstance(evidence, dict):
+                    evidence.setdefault("origin", "deterministic-scanner")
         ledger.record_tool(
             "agentic-scanner", "local-rule-scanner", {"added_lines": len(parsed.added_lines)},
             True, int((time.monotonic() - started) * 1000),
@@ -834,7 +1437,12 @@ class AgenticReviewer(Reviewer):
                             finding.rule_id, finding.path, finding.line
                         ),
                         "tool": "declarative-scanner", "scanner": name,
+                        "origin": "deterministic-scanner",
                     }]
+                else:
+                    for evidence in finding.evidence_refs:
+                        if isinstance(evidence, dict):
+                            evidence.setdefault("origin", "deterministic-scanner")
                 if finding.source == "unknown":
                     finding.source = "declarative-scanner:%s" % name
             findings.extend(scanned)
@@ -970,7 +1578,9 @@ class AgenticReviewer(Reviewer):
             context_manager=self.context_manager,
             working_memory_supplier=working_memory_supplier,
             observation_sink=observation_sink,
-            minimum_tool_calls=int(bool(candidates)),
+            # Candidate-specific preflight is supplied below. Let the Critic
+            # request more evidence only when it judges that evidence missing.
+            minimum_tool_calls=0,
         )
         tools = suite.registry("critic", ROLE_PERMISSIONS["critic"])
         initial_observations = []
@@ -1004,6 +1614,35 @@ class AgenticReviewer(Reviewer):
                         "step": 0, "tool": tool_name, "ok": False,
                         "error": str(exc)[:1000],
                         "reason": "candidate %d exact-location verification" % index,
+                    })
+            symbols = list(dict.fromkeys(
+                str(value.get("symbol") or "").strip()
+                for value in item.call_chain or []
+                if isinstance(value, dict) and str(value.get("symbol") or "").strip()
+            ))[:2]
+            evidence_calls = []
+            if "locate_tests" in tools.names() and suite.repository_available:
+                evidence_calls.append(("locate_tests", {
+                    "path": item.path,
+                    "symbol": symbols[0] if symbols else "",
+                }))
+            if "symbol" in tools.names() and suite.repository_available:
+                evidence_calls.extend(
+                    ("symbol", {"name": symbol_name}) for symbol_name in symbols
+                )
+            for tool_name, arguments in evidence_calls:
+                try:
+                    value = tools.invoke(tool_name, arguments)
+                    initial_observations.append({
+                        "step": 0, "tool": tool_name, "ok": True,
+                        "result": value,
+                        "reason": "candidate %d trigger and reachability preflight" % index,
+                    })
+                except Exception as exc:
+                    initial_observations.append({
+                        "step": 0, "tool": tool_name, "ok": False,
+                        "error": str(exc)[:1000],
+                        "reason": "candidate %d trigger and reachability preflight" % index,
                     })
         return role.run(
             json.dumps({

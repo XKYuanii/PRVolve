@@ -382,6 +382,86 @@ class RepositoryToolSuite:
                 "network_used": False,
                 "arbitrary_code_executed": False,
             })
+        if kind == "empty-sequence-index":
+            results = []
+            for value in ("", []):
+                error_type = ""
+                try:
+                    value[-1]
+                except IndexError as exc:
+                    error_type = type(exc).__name__
+                results.append({
+                    "value_type": type(value).__name__,
+                    "length": len(value),
+                    "negative_one_index_raises": error_type == "IndexError",
+                    "error_type": error_type,
+                })
+            return _evidence("semantic_probe", {
+                "kind": kind,
+                "operation": "index-empty-built-in-sequence-at-negative-one",
+                "results": results,
+                # This is a directed witness for an existing evidence target, not
+                # a repository-specific counterexample.  Making it create another
+                # resolution debt can deadlock the very revision it is meant to
+                # support; reachability is still enforced by the publication gate.
+                "requires_resolution": False,
+                "network_used": False,
+                "filesystem_read": False,
+                "arbitrary_code_executed": False,
+            })
+        if kind == "missing-mapping-key":
+            value = {}
+            error_type = ""
+            try:
+                value["missing"]
+            except KeyError as exc:
+                error_type = type(exc).__name__
+            return _evidence("semantic_probe", {
+                "kind": kind,
+                "operation": "subscript-missing-dictionary-key",
+                "mapping": value,
+                "missing_key_subscript_raises": error_type == "KeyError",
+                "error_type": error_type,
+                "requires_resolution": False,
+                "network_used": False,
+                "filesystem_read": False,
+                "arbitrary_code_executed": False,
+            })
+        if kind == "truthiness-vs-none":
+            values = (None, "", 0, [], False, "value")
+            return _evidence("semantic_probe", {
+                "kind": kind,
+                "operation": "compare-truthiness-with-explicit-none-check",
+                "values": [{
+                    "value": repr(value),
+                    "type": type(value).__name__,
+                    "truthy": bool(value),
+                    "is_not_none": value is not None,
+                    "branches_diverge": bool(value) != (value is not None),
+                } for value in values],
+                "requires_resolution": False,
+                "network_used": False,
+                "filesystem_read": False,
+                "arbitrary_code_executed": False,
+            })
+        if kind == "json-serialization":
+            value = range(1, 4)
+            error_type = ""
+            try:
+                json.dumps(value)
+            except TypeError as exc:
+                error_type = type(exc).__name__
+            return _evidence("semantic_probe", {
+                "kind": kind,
+                "operation": "serialize-range-with-standard-json-encoder",
+                "value_type": type(value).__name__,
+                "json_serialization_raises": error_type == "TypeError",
+                "error_type": error_type,
+                "requires_resolution": False,
+                "network_used": False,
+                "filesystem_read": False,
+                "arbitrary_code_executed": False,
+            })
         if kind == "nullable-length":
             value = None
             error_type = ""
@@ -857,6 +937,10 @@ class RepositoryToolSuite:
                                 "git-option-normalization",
                                 "url-normalization-redaction",
                                 "tri-state-boolean",
+                                "empty-sequence-index",
+                                "missing-mapping-key",
+                                "truthiness-vs-none",
+                                "json-serialization",
                                 "nullable-length",
                                 "dict-mutation-during-iteration",
                                 "decimal-special-exponent",

@@ -68,9 +68,27 @@ class FakeAgenticClient:
                         task.get("active_agent_skills") or [{}]
                     )[0].get("name", ""),
                 }]}
-            return {"action": "final", "findings": []}
+            return {
+                "action": "final", "findings": [],
+                "hypotheses": [{
+                    "hypothesis_id": "hyp-1",
+                    "claim": "The change may alter correctness behavior.",
+                    "status": "unresolved",
+                    "explanation": "No repository context is available in this test.",
+                    "required_proof": "Inspect callers and related tests.",
+                }],
+            }
         if role == "security":
-            return {"action": "final", "findings": []}
+            return {
+                "action": "final", "findings": [],
+                "hypotheses": [{
+                    "hypothesis_id": "hyp-1",
+                    "claim": "The change may alter a security boundary.",
+                    "status": "unresolved",
+                    "explanation": "No repository context is available in this test.",
+                    "required_proof": "Inspect callers and trust boundaries.",
+                }],
+            }
         if role == "critic":
             return {
                 "action": "final",
