@@ -207,7 +207,11 @@ def apply_critic(result, candidates):
         }
         publication_ready = accepted and all(verification.values())
         corrected_rule_id = ""
-        if publication_ready and decision:
+        # Deterministic scanners own their stable rule identity.  A Critic may
+        # correct a model-authored CWE, but must not replace a scanner rule
+        # with an unverified taxonomy guess; downstream renderers/evaluators
+        # can map that canonical rule deterministically.
+        if publication_ready and decision and not is_deterministic_finding(finding):
             proposed_rule_id = str(
                 decision.get("corrected_rule_id") or ""
             ).strip().upper()

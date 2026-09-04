@@ -937,6 +937,31 @@ class AgenticEvaluationTests(unittest.TestCase):
         self.assertEqual("CWE-835", candidates[0].original_rule_id)
         self.assertEqual("CWE-682", decisions[0]["corrected_rule_id"])
 
+    def test_critic_cannot_rewrite_a_deterministic_scanner_rule(self):
+        candidate = Finding(
+            rule_id="COR-EMPTY-SEQUENCE-ACCESS", severity=Severity.MEDIUM,
+            title="Empty sequence access", explanation="An empty value raises.",
+            path="app.py", line=1, evidence="value[-1]",
+            fix="Guard the empty value.", test="Cover an empty value.",
+            confidence=0.98, source="local-rule-scanner",
+        )
+        result = {
+            "decisions": [{
+                "finding_index": 0, "accepted": True,
+                "introduced_by_diff": True, "reproducible": True,
+                "evidence_sufficient": True,
+                "would_comment_on_real_pr": True, "objections": [],
+                "corrected_rule_id": "CWE-476",
+            }],
+            "_observations": [],
+        }
+
+        candidates, decisions = apply_critic(result, [candidate])
+
+        self.assertEqual("COR-EMPTY-SEQUENCE-ACCESS", candidates[0].rule_id)
+        self.assertEqual("", candidates[0].original_rule_id)
+        self.assertEqual("", decisions[0]["corrected_rule_id"])
+
     def test_same_repository_evidence_and_similar_title_are_deduplicated(self):
         values = [
             Finding(
