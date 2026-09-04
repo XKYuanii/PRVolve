@@ -127,7 +127,7 @@ class PhaseImplementationTests(unittest.TestCase):
         findings = reviewer.review_with_context("task", DIFF, parsed, "org/repo")
         summary = reviewer.collaboration_summary("task")
         self.assertEqual(["SEC-EVAL"], [item.rule_id for item in findings])
-        self.assertEqual(6, summary["execution"]["llm_calls"])
+        self.assertEqual(7, summary["execution"]["llm_calls"])
         self.assertEqual(
             ["lead", "security", "correctness-reliability", "critic"],
             summary["collaboration"]["roles"],

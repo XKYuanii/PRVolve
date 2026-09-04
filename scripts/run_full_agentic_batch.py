@@ -182,8 +182,23 @@ def main() -> None:
     parser.add_argument("--token-budget", type=int, default=64000)
     parser.add_argument("--time-budget", type=int, default=120)
     parser.add_argument(
+        "--max-revision-rounds", type=int, default=0,
+        help=(
+            "Rounds of Lead-guided rework a worker may receive. 0 keeps the "
+            "published one-pass baseline profile; raise it to measure what the "
+            "Lead's targeted guidance is worth on recall."
+        ),
+    )
+    parser.add_argument(
         "--seed-report", action="append", default=[],
         help="Reuse completed cases from this report; repeat for multiple reports.",
+    )
+    parser.add_argument(
+        "--rerun-case-prefix", action="append", default=[],
+        help=(
+            "Discard cached cases whose id starts with this prefix; repeat for "
+            "multiple prefixes. Useful after repository context changes."
+        ),
     )
     parser.add_argument(
         "--cached-only", action="store_true",
@@ -237,6 +252,13 @@ def main() -> None:
             os.path.abspath(seed_report), allowed_ids,
             include_failures=args.cached_only,
         ))
+    if args.rerun_case_prefix:
+        completed = {
+            case_id: result for case_id, result in completed.items()
+            if not any(
+                case_id.startswith(prefix) for prefix in args.rerun_case_prefix
+            )
+        }
     missing_cached = [case["id"] for case in selected if case["id"] not in completed]
     if args.cached_only and missing_cached:
         parser.error(
@@ -249,7 +271,8 @@ def main() -> None:
         provider=str(config["provider"]), timeout=args.timeout,
     )
     reviewer = ProductArmReviewer(
-        "full-agentic", client, args.token_budget, args.time_budget
+        "full-agentic", client, args.token_budget, args.time_budget,
+        max_revision_rounds=args.max_revision_rounds,
     )
     harness = ProductionEvaluationHarness()
     for case in selected:

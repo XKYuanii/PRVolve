@@ -1371,9 +1371,11 @@ class AgenticEvaluationTests(unittest.TestCase):
             "multi-llm-no-critic": {
                 "lead": 3, "security": 1, "correctness-reliability": 1,
             },
+            # Critic is asked once to verify with a tool of its own before it
+            # may judge, so it costs two calls, not one.
             "full-agentic": {
                 "lead": 3, "security": 1,
-                "correctness-reliability": 1, "critic": 1,
+                "correctness-reliability": 1, "critic": 2,
             },
         }
         parsed = parse_unified_diff(DIFF)
@@ -1454,7 +1456,7 @@ class AgenticEvaluationTests(unittest.TestCase):
         self.assertFalse(report["dataset"]["ready"])
         self.assertFalse(report["critic_gate"]["passed"])
         self.assertEqual(
-            {"lead": 9, "security": 3, "correctness-reliability": 3, "critic": 3},
+            {"lead": 9, "security": 3, "correctness-reliability": 3, "critic": 6},
             report["arms"]["full-agentic"]["execution"]["model_role_calls"],
         )
 

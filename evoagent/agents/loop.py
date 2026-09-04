@@ -66,6 +66,7 @@ class AgentLoop:
     ) -> Dict[str, Any]:
         started = time.monotonic()
         observations: List[dict] = list(initial_observations or [])
+        nudged = False
         starting_tokens = ledger.tokens_used(self.name)
         ledger.trace(
             self.name, "started", token_budget=self.token_budget,
@@ -127,8 +128,19 @@ class AgentLoop:
                 tool=str(action.get("tool", "")), reason=str(action.get("reason", ""))[:500],
             )
             if kind == "final":
-                successful_tools = sum(bool(item.get("ok")) for item in observations)
-                if successful_tools < self.minimum_tool_calls:
+                # Only the role's own tool calls count. Preflight observations
+                # (step 0) are handed in by the system, so counting them let a
+                # role satisfy "verify before concluding" without verifying
+                # anything - the opposite of what the rule is for.
+                successful_tools = sum(
+                    bool(item.get("ok")) and int(item.get("step", 0)) >= 1
+                    for item in observations
+                )
+                # Ask once, then accept the answer. Asking until the step budget
+                # runs out would turn "there is genuinely nothing here" into a
+                # failed role, which is a worse outcome than an unverified pass.
+                if successful_tools < self.minimum_tool_calls and not nudged:
+                    nudged = True
                     observation = {
                         "step": step, "tool": "protocol-requirement", "ok": False,
                         "error": (

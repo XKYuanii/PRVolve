@@ -174,6 +174,43 @@ class RuntimeMemoryTests(unittest.TestCase):
         self.assertEqual("tool_observation", seen[1]["items"][0]["kind"])
         self.assertIn("lookup:auth", seen[1]["items"][0]["content"])
 
+    def test_preflight_observations_do_not_satisfy_the_verify_first_rule(self):
+        """A role must run a tool of its own before it may conclude."""
+        seen = []
+
+        class AlwaysFinalClient:
+            provider = "fake"
+            model = "fake"
+
+            def complete_json(_self, _role, _prompt, user, ledger=None, max_tokens=None):
+                managed = json.loads(user)
+                seen.append([
+                    item.get("tool") for item in managed.get("observations") or []
+                ])
+                return {"action": "final", "findings": []}
+
+        role = AgentLoop(
+            "security", "Report only verified defects.", AlwaysFinalClient(),
+            1000, 10, context_manager=ContextManager(), minimum_tool_calls=1,
+        )
+        registry = ToolRegistry([AgentTool(
+            "lookup", "Lookup a fact.", {
+                "type": "object", "properties": {"key": {"type": "string"}},
+                "required": ["key"], "additionalProperties": False,
+            }, lambda key: {"evidence_id": "lookup:%s" % key, "output": "fact"},
+        )])
+        preflight = [{"step": 0, "tool": "read_file", "ok": True, "result": "source"}]
+
+        role.run(
+            json.dumps({"phase": "worker"}), registry, ExecutionLedger("agentic"),
+            initial_observations=preflight,
+        )
+
+        # The system-supplied preflight result does not count, so the role is
+        # asked once; it is then taken at its word rather than looped to death.
+        self.assertEqual(2, len(seen))
+        self.assertIn("protocol-requirement", seen[1])
+
     def test_task_consolidation_releases_working_memory_but_keeps_episode(self):
         memory = MemoryManager(self.store)
         memory.remember_observation("tenant-a", "org/repo", "task", "security", {

@@ -95,7 +95,7 @@ class ProductArmReviewer:
 
     def __init__(
         self, arm: str, client: JsonChatClient, total_token_budget: int,
-        total_time_budget_seconds: int = 120,
+        total_time_budget_seconds: int = 120, max_revision_rounds: int = 0,
     ):
         if arm not in ARM_TOPOLOGY:
             raise ValueError("unknown evaluation arm: %s" % arm)
@@ -124,11 +124,12 @@ class ProductArmReviewer:
         self.per_role_time_budget_seconds = per_role_seconds
         self.expected_roles = roles
         self.store = _EvaluationTaskStore(task_input)
-        # Keep evaluation arms on the stable profile: one pass per specialist.
-        # Deep investigations can opt into revisions in production, but they are
-        # deliberately outside the obvious-defect canary budget.
+        # The default keeps evaluation arms on the stable one-pass profile, so
+        # published baselines stay comparable. Raising it is how a run measures
+        # what the Lead's targeted revision guidance is worth on recall; the
+        # value used is recorded in evaluation_config().
         structured_config = {
-            "max_revision_rounds": 0,
+            "max_revision_rounds": max(0, int(max_revision_rounds)),
             "publish_unverified_suggestions": False,
         }
         self.router = AgenticReviewer(
