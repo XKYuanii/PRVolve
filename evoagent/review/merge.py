@@ -550,8 +550,31 @@ def merge_findings(findings: Iterable[Finding]) -> List[Finding]:
                         )
                     )
                 )
+                finding_evidence = " ".join(str(finding.evidence).split())
+                existing_evidence = " ".join(str(existing.evidence).split())
+                same_quoted_code = bool(
+                    finding_evidence and existing_evidence
+                    and (
+                        finding_evidence == existing_evidence
+                        or finding_evidence in existing_evidence
+                        or existing_evidence in finding_evidence
+                    )
+                )
+                rule_tokens = set(re.findall(
+                    r"[a-z0-9]+", str(existing.rule_id).lower()
+                )).difference({
+                    "cor", "sec", "rel", "rule", "guard", "access",
+                    "semantics",
+                })
+                same_scanner_mechanism = bool(
+                    is_deterministic_finding(existing)
+                    and existing.line == finding.line
+                    and same_quoted_code
+                    and rule_tokens.intersection(claim_tokens)
+                )
                 if existing.path == finding.path and (
                     same_probe_claim
+                    or same_scanner_mechanism
                     or (
                         existing.line == finding.line and
                         evidence_ids.intersection(existing_ids)

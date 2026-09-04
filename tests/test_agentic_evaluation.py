@@ -1014,7 +1014,7 @@ class AgenticEvaluationTests(unittest.TestCase):
             explanation="The missing mapping key raises KeyError.",
             path="app.py", line=7, evidence="value['key']",
             evidence_refs=[{
-                "evidence_id": "read_file:shared", "tool": "read_file",
+                "evidence_id": "read_file:security", "tool": "read_file",
             }], fix="Guard access.", test="Omit the key.",
             confidence=0.9, source="security",
         )
@@ -1024,18 +1024,29 @@ class AgenticEvaluationTests(unittest.TestCase):
             explanation="The missing mapping key is reachable.",
             path="app.py", line=7, evidence="value['key']",
             evidence_refs=[
-                {"evidence_id": "read_file:shared", "tool": "read_file"}, probe,
+                {"evidence_id": "read_file:correctness", "tool": "read_file"}, probe,
             ], fix="Keep optional access.", test="Omit the key.",
             confidence=0.9, source="correctness-reliability",
         )
+        distinct_mechanism = Finding(
+            rule_id="CWE-798", severity=Severity.HIGH,
+            title="A credential is embedded in the expression",
+            explanation="The literal credential is exposed.",
+            path="app.py", line=7, evidence="value['key']",
+            evidence_refs=[{
+                "evidence_id": "read_file:secret", "tool": "read_file",
+            }], fix="Load the credential securely.", test="Check configuration.",
+            confidence=0.9, source="security",
+        )
 
         merged = merge_findings([
-            scanner, taxonomy_variant, exact_confirmation,
+            scanner, taxonomy_variant, exact_confirmation, distinct_mechanism,
         ])
 
-        self.assertEqual(1, len(merged))
-        self.assertEqual("local-rule-scanner", merged[0].source)
-        self.assertEqual("COR-MISSING-MAPPING-GUARD", merged[0].rule_id)
+        self.assertEqual(2, len(merged))
+        scanner_result = next(item for item in merged if item.source == "local-rule-scanner")
+        self.assertEqual("COR-MISSING-MAPPING-GUARD", scanner_result.rule_id)
+        self.assertIn("CWE-798", {item.rule_id for item in merged})
 
     def test_failed_closed_critic_does_not_erase_the_safe_review(self):
         reviewer = ProductArmReviewer.__new__(ProductArmReviewer)
