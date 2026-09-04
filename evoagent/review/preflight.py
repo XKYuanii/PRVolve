@@ -12,6 +12,11 @@ def repository_preflight(
     assignment, parsed, tools, repository_available=True,
 ):
     """Prefetch risk-ranked source context before a worker's first model call."""
+    # A revision already receives the prior evidence selected by its evidence
+    # mission.  Re-running the same automatic sweep spends tools without adding
+    # facts; leave any missing proof to the Worker's own tool choice instead.
+    if assignment.get("prior_worker_result"):
+        return []
     files = set(assignment.get("files") or parsed.files)
     added = [item for item in parsed.added_lines if item.path in files]
     risk_cues = {

@@ -491,6 +491,20 @@ def public_decision(result):
 
 
 def merge_findings(findings: Iterable[Finding]) -> List[Finding]:
+    findings = list(findings)
+    deterministic_keys = {
+        (item.path, item.line, item.rule_id)
+        for item in findings if is_deterministic_finding(item)
+    }
+    # Let an exact Worker confirmation enrich its scanner candidate before a
+    # taxonomy variant is considered.  This makes the result independent of
+    # Worker completion order and gives semantic-probe deduplication a shared
+    # behavioral identity to work with.
+    findings.sort(key=lambda item: (
+        0 if is_deterministic_finding(item)
+        else 1 if (item.path, item.line, item.rule_id) in deterministic_keys
+        else 2
+    ))
     merged = {}
     for finding in findings:
         key = (finding.path, finding.line, finding.rule_id)
@@ -503,9 +517,12 @@ def merge_findings(findings: Iterable[Finding]) -> List[Finding]:
             value for value in evidence_ids
             if value.startswith("semantic_probe:")
         }
-        if evidence_ids and not is_deterministic_finding(finding):
-            title_tokens = set(re.findall(
-                r"[a-z0-9_]+", str(finding.title).lower()
+        current = merged.get(key)
+        if current is None and evidence_ids and not is_deterministic_finding(finding):
+            claim_tokens = set(re.findall(
+                r"[a-z0-9_]+", "%s %s" % (
+                    str(finding.title).lower(), str(finding.explanation).lower(),
+                )
             ))
             for existing_key, existing in merged.items():
                 existing_ids = {
@@ -514,11 +531,14 @@ def merge_findings(findings: Iterable[Finding]) -> List[Finding]:
                     and str(item.get("evidence_id", ""))
                 }
                 existing_tokens = set(re.findall(
-                    r"[a-z0-9_]+", str(existing.title).lower()
+                    r"[a-z0-9_]+", "%s %s" % (
+                        str(existing.title).lower(),
+                        str(existing.explanation).lower(),
+                    )
                 ))
-                title_overlap = (
-                    len(title_tokens.intersection(existing_tokens))
-                    / max(1, min(len(title_tokens), len(existing_tokens)))
+                claim_overlap = (
+                    len(claim_tokens.intersection(existing_tokens))
+                    / max(1, min(len(claim_tokens), len(existing_tokens)))
                 )
                 same_probe_claim = bool(
                     semantic_ids.intersection(existing_ids)
@@ -530,16 +550,12 @@ def merge_findings(findings: Iterable[Finding]) -> List[Finding]:
                         )
                     )
                 )
-                if (
-                    existing.path == finding.path
-                    and not is_deterministic_finding(existing)
-                    and (
-                        same_probe_claim
-                        or (
-                            existing.line == finding.line and
-                            evidence_ids.intersection(existing_ids)
-                            and title_overlap >= 0.6
-                        )
+                if existing.path == finding.path and (
+                    same_probe_claim
+                    or (
+                        existing.line == finding.line and
+                        evidence_ids.intersection(existing_ids)
+                        and claim_overlap >= 0.6
                     )
                 ):
                     key = existing_key

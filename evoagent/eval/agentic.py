@@ -172,6 +172,16 @@ class ProductArmReviewer:
             )
             if proposed == 0:
                 required.discard("critic")
+            critic_failed_closed = any(
+                item.get("event") == "critic_failed_closed"
+                for items in (execution.get("agent_traces") or {}).values()
+                for item in items
+            )
+            if critic_failed_closed:
+                # The product reviewer already quarantined every model finding.
+                # Preserve that safe result instead of turning it into a harness
+                # failure merely because the Critic transport never succeeded.
+                required.discard("critic")
         missing = sorted(role for role in required if actual[role] < 1)
         if missing:
             raise RuntimeError(
@@ -192,6 +202,7 @@ class ProductArmReviewer:
             "finding_resolution_without_finding", "finding_resolution_deferred",
             "final_action_validation_failed",
             "budget_exhausted",
+            "critic_failed_closed",
         }
         return {
             "gates": dict(summary.get("gates") or {}),

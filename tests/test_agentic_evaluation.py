@@ -528,6 +528,35 @@ class AgenticEvaluationTests(unittest.TestCase):
             ("semantic_probe", {"kind": "empty-sequence-index"}), tools.calls,
         )
 
+    def test_evidence_revision_does_not_repeat_automatic_preflight(self):
+        class RecordingTools:
+            def __init__(self):
+                self.calls = []
+
+            def names(self):
+                return ["read_file", "search_repository", "ast_analyze"]
+
+            def invoke(self, name, arguments):
+                self.calls.append((name, dict(arguments)))
+                return {"evidence_id": name + ":1", "tool": name, "output": {}}
+
+        parsed = parse_unified_diff(
+            "--- a/app.py\n+++ b/app.py\n@@ -1 +1 @@\n+value = changed()\n"
+        )
+        tools = RecordingTools()
+
+        observations = repository_preflight({
+            "files": parsed.files,
+            "prior_worker_result": {"hypotheses": [{"status": "unresolved"}]},
+            "evidence_targets": [{
+                "path": "app.py", "line": 1,
+                "required_proof": "Trace a caller.",
+            }],
+        }, parsed, tools)
+
+        self.assertEqual([], observations)
+        self.assertEqual([], tools.calls)
+
     def test_preflight_probes_exception_cleanup_only_without_added_handler(self):
         class RecordingTools:
             def __init__(self):
@@ -961,6 +990,73 @@ class AgenticEvaluationTests(unittest.TestCase):
         self.assertEqual("COR-EMPTY-SEQUENCE-ACCESS", candidates[0].rule_id)
         self.assertEqual("", candidates[0].original_rule_id)
         self.assertEqual("", decisions[0]["corrected_rule_id"])
+
+    def test_scanner_and_worker_taxonomy_variants_merge_by_shared_behavior(self):
+        probe = {
+            "evidence_id": "semantic_probe:missing-key", "tool": "semantic_probe",
+            "output": {
+                "kind": "missing-mapping-key",
+                "missing_key_subscript_raises": True,
+                "arbitrary_code_executed": False,
+            },
+        }
+        scanner = Finding(
+            rule_id="COR-MISSING-MAPPING-GUARD", severity=Severity.MEDIUM,
+            title="Missing mapping guard", explanation="A missing key raises KeyError.",
+            path="app.py", line=7, evidence="value['key']",
+            evidence_refs=[{"evidence_id": "local:1", "tool": "local-rule-scanner"}],
+            fix="Keep optional access.", test="Omit the key.", confidence=0.98,
+            source="local-rule-scanner",
+        )
+        taxonomy_variant = Finding(
+            rule_id="CWE-476", severity=Severity.MEDIUM,
+            title="Direct mapping access raises KeyError",
+            explanation="The missing mapping key raises KeyError.",
+            path="app.py", line=7, evidence="value['key']",
+            evidence_refs=[{
+                "evidence_id": "read_file:shared", "tool": "read_file",
+            }], fix="Guard access.", test="Omit the key.",
+            confidence=0.9, source="security",
+        )
+        exact_confirmation = Finding(
+            rule_id="COR-MISSING-MAPPING-GUARD", severity=Severity.MEDIUM,
+            title="Direct mapping access raises KeyError",
+            explanation="The missing mapping key is reachable.",
+            path="app.py", line=7, evidence="value['key']",
+            evidence_refs=[
+                {"evidence_id": "read_file:shared", "tool": "read_file"}, probe,
+            ], fix="Keep optional access.", test="Omit the key.",
+            confidence=0.9, source="correctness-reliability",
+        )
+
+        merged = merge_findings([
+            scanner, taxonomy_variant, exact_confirmation,
+        ])
+
+        self.assertEqual(1, len(merged))
+        self.assertEqual("local-rule-scanner", merged[0].source)
+        self.assertEqual("COR-MISSING-MAPPING-GUARD", merged[0].rule_id)
+
+    def test_failed_closed_critic_does_not_erase_the_safe_review(self):
+        reviewer = ProductArmReviewer.__new__(ProductArmReviewer)
+        reviewer.arm = "full-agentic"
+        reviewer.expected_roles = (
+            "lead", "security", "correctness-reliability", "critic",
+        )
+        reviewer._last_summary = {
+            "collaboration": {"candidate_findings_before_critic": 1},
+            "execution": {
+                "model_call_log": [
+                    {"role": role, "ok": True}
+                    for role in ("lead", "security", "correctness-reliability")
+                ],
+                "agent_traces": {
+                    "critic": [{"event": "critic_failed_closed"}],
+                },
+            },
+        }
+
+        reviewer._validate_execution()
 
     def test_same_repository_evidence_and_similar_title_are_deduplicated(self):
         values = [
