@@ -311,6 +311,51 @@ class FindingPolicyTests(unittest.TestCase):
             decisions[0]["reasons"],
         )
 
+    def test_verified_review_survives_severity_and_tool_type_heuristics(self):
+        critic = {"finding_index": 0, "publication_ready": True, **{
+            key: True for key in (
+                "introduced_by_diff", "reproducible", "evidence_sufficient",
+                "would_comment_on_real_pr", "differential_causality", "premises_verified",
+            )
+        }}
+        for severity in (Severity.LOW, Severity.CRITICAL):
+            with self.subTest(severity=severity):
+                candidate = finding(rule_id="CWE-95", severity=severity)
+                candidate.evidence_refs = [{
+                    "evidence_id": "read_file:contract", "tool": "read_file",
+                    "output": {"path": "app.py", "content": "dangerous(value)"},
+                }]
+                published, suggestions, _ = partition_publication(
+                    [], [candidate], [candidate], [critic], repository_available=True,
+                    publish_unverified_suggestions=False,
+                )
+                self.assertEqual([], suggestions)
+                self.assertEqual([candidate], FindingGate().apply(
+                    published, parse_unified_diff(DIFF),
+                ).accepted)
+                self.assertEqual(severity, candidate.severity)
+
+    def test_verified_review_cannot_bypass_location_or_release_requirements(self):
+        critic = {"finding_index": 0, "publication_ready": True, **{
+            key: True for key in (
+                "introduced_by_diff", "reproducible", "evidence_sufficient",
+                "would_comment_on_real_pr", "differential_causality", "premises_verified",
+            )
+        }}
+        for field, value in (("line", 99), ("fix", ""), ("test", "")):
+            with self.subTest(field=field):
+                candidate = finding(severity=Severity.CRITICAL)
+                setattr(candidate, field, value)
+                candidate.evidence_refs = [{
+                    "evidence_id": "read_file:contract", "tool": "read_file",
+                    "output": {"path": "app.py", "content": "dangerous(value)"},
+                }]
+                published, _, _ = partition_publication(
+                    [], [candidate], [candidate], [critic], repository_available=True,
+                    publish_unverified_suggestions=False,
+                )
+                self.assertEqual([], FindingGate().apply(published, parse_unified_diff(DIFF)).accepted)
+
     def test_exact_stable_confidence_threshold_survives_float_subtraction(self):
         candidate = finding()
         candidate.confidence = 0.85 - 0.05

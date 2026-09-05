@@ -16,7 +16,7 @@ import weakref
 from typing import Any, Dict, Iterable, List, Optional, Set
 from urllib.parse import urlsplit, urlunsplit
 
-from ..core.diff_parser import ParsedDiff
+from ..core.diff_parser import ParsedDiff, changed_block
 from ..tools.registry import AgentTool, ToolRegistry
 from ..session.ledger import ExecutionLedger
 
@@ -148,6 +148,8 @@ class RepositoryToolSuite:
             {"found": True, "path": match.path, "line": match.line, "content": match.content}
             if match else {"found": False, "path": path, "line": line}
         )
+        if match:
+            payload["change"] = changed_block(self.diff, match.path, match.line)
         return _evidence("changed_line", payload)
 
     def symbol(self, name: str) -> dict:

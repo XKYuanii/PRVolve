@@ -992,19 +992,45 @@ class AgenticEvaluationTests(unittest.TestCase):
             fix="Restore the narrow guard.", test="Cover the formerly supported type.",
             confidence=0.8, source="correctness-reliability",
         )
+        diff = "--- a/app.py\n+++ b/app.py\n@@ -10 +10 @@\n-if isinstance(value, Class):\n+if isinstance(value, Node):\n"
+        changed = RepositoryToolSuite("", diff, parse_unified_diff(diff)).changed_line("app.py", 10)
+        proof = self._causal_delta()
+        proof.update({
+            "code_before": changed["output"]["change"]["before"],
+            "code_after": changed["output"]["change"]["after"],
+            "before": "The caller rejects that type.",
+            "after": "The caller rejects that type.",
+        })
         result = {
             "decisions": [{
                 "finding_index": 0, "accepted": False,
                 "objections": ["The caller rejects that type before this branch."],
-                "causal_delta": self._causal_delta(),
+                "causal_delta": proof,
+                "supporting_evidence_ids": [changed["evidence_id"]],
             }],
-            "_observations": [],
+            "_observations": [{"tool": "changed_line", "ok": True, "result": changed}],
         }
 
         _candidates, decisions = apply_critic(result, [candidate])
 
         self.assertTrue(decisions[0]["rejection_ready"])
         self.assertEqual("rejected", decisions[0]["verdict"])
+
+        # Copying new code into the old side (the observed false-refutation
+        # failure), inventing a citation, or citing a failed tool cannot prove
+        # that the defect was pre-existing.
+        for fault in ("wrong_old_code", "unknown_citation", "failed_tool"):
+            with self.subTest(fault=fault):
+                broken = json.loads(json.dumps(result))
+                if fault == "wrong_old_code":
+                    broken["decisions"][0]["causal_delta"]["code_before"] = proof["code_after"]
+                elif fault == "unknown_citation":
+                    broken["decisions"][0]["supporting_evidence_ids"] = ["changed_line:invented"]
+                else:
+                    broken["_observations"][0]["ok"] = False
+                _, verdicts = apply_critic(broken, [candidate])
+                self.assertFalse(verdicts[0]["rejection_ready"])
+                self.assertEqual("inconclusive", verdicts[0]["verdict"])
 
     def test_critic_cannot_accept_while_reporting_blocking_objections(self):
         candidate = Finding(

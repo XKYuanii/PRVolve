@@ -49,3 +49,45 @@ def parse_unified_diff(diff: str) -> ParsedDiff:
 
     return ParsedDiff(files=files, added_lines=added)
 
+
+def changed_block(diff: str, path: str, line: int) -> dict:
+    """Return both sides of the contiguous edit containing a new-file line.
+
+    Keep replacements as blocks: adjacent +/- lines need not be one-to-one,
+    and some imported diffs put additions before deletions.
+    """
+    current_path, new_line, start = "", None, 0
+    before, after = [], []
+    for raw in [*diff.splitlines(), ""]:
+        if raw.startswith("\\ No newline"):
+            continue
+        edit = new_line is not None and raw[:1] in {"+", "-"} and not raw.startswith(
+            ("--- ", "+++ ")
+        )
+        if not edit and (before or after):
+            if current_path == path and start <= line < start + len(after):
+                old, new = "\n".join(before), "\n".join(after)
+                return {
+                    "before": old[:4000], "after": new[:4000],
+                    "complete": len(old) <= 4000 and len(new) <= 4000,
+                }
+            before, after = [], []
+        if raw.startswith("+++ "):
+            current_path = raw[4:].split("\t", 1)[0]
+            if current_path.startswith("b/"):
+                current_path = current_path[2:]
+            new_line = None
+        elif raw.startswith(("diff --git ", "--- ")):
+            new_line = None
+        elif HUNK.match(raw):
+            new_line = int(HUNK.match(raw).group(1))
+        elif edit:
+            if not before and not after:
+                start = new_line
+            (after if raw.startswith("+") else before).append(raw[1:])
+            if raw.startswith("+"):
+                new_line += 1
+        elif new_line is not None and raw.startswith(" "):
+            new_line += 1
+    return {}
+

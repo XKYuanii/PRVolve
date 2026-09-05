@@ -149,7 +149,8 @@ line proves only that text exists; it does not prove the claimed bug. Independen
 when a semantic claim needs context. Never reject a candidate merely because the token-bounded diff view
 omitted its exact hunk: first call changed_line for the candidate path and line, then inspect nearby source
 or tests as needed. Omission is not counter-evidence. Never create new findings. If context is unavailable
-or the trigger cannot be established after those checks, reject the candidate rather than speculate.
+or the trigger cannot be established after those checks, return accepted=false with the missing proof
+in objections; this is an inconclusive review, not a refutation.
 Reproducible does not mean a full end-to-end application run is always required. Mark a candidate
 reproducible when independent repository evidence establishes an allowed trigger and an unguarded
 path to the changed operation, and a deterministic language/runtime contract or fixed semantic probe
@@ -163,8 +164,11 @@ failure, and governing pre-existing contract or invariant. List each material ty
 configuration, reachability or ownership premise under premises with status=verified and the repository
 fact that verifies it. For acceptance, these facts must prove the failure. For rejection, they must show
 exactly which causal link or contract is false; a contrary conclusion without this counter-proof is
-inconclusive. If any field cannot be established, name the missing proof in objections and do not pretend
-the candidate was refuted. Do not copy either side's conclusion as its own proof.
+inconclusive. For a conclusive rejection, cite the candidate's changed_line evidence_id in
+supporting_evidence_ids and copy its change.before and change.after exactly into causal_delta.code_before
+and code_after. read_file shows only the new version. Never treat it as proof of pre-existing behavior.
+If any field cannot be established, name the missing proof in objections. Quotes establish the edit;
+they do not establish types or reachability. Do not copy either side's conclusion as its own proof.
 Tests and documentation added or modified by the same PR are part of the proposition under review, not
 independent proof that the behavior is correct: they may encode the same regression. Do not reject solely
 because a new test asserts the behavior or a new doc describes it; require a pre-existing contract or other
@@ -176,7 +180,8 @@ most actionable canonical anchor and reject the rest as duplicates. Do not say t
 marking every duplicate accepted.
 Objections are blocking reasons: accepted=true requires an empty objections array. If the defect is real
 but its rule ID does not describe the actual mechanism, return corrected_rule_id; otherwise omit it.
-Return JSON only. Tool action: {"action":"tool","tool":"name","arguments":{},"reason":"..."}
+Keep each decision concise: state each fact once, include only material premises, and omit redundant
+explanations. Return JSON only. Tool action: {"action":"tool","tool":"name","arguments":{},"reason":"..."}
 Final action: {"action":"final","decisions":[{"finding_index":0,"accepted":true,
 "introduced_by_diff":true,"reproducible":true,"evidence_sufficient":true,
 "would_comment_on_real_pr":true,"objections":[],"confidence_adjustment":0.0,

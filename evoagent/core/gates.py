@@ -64,6 +64,7 @@ class FindingGate:
             supporting_repository_refs = (
                 claim_specific_refs
                 if finding.severity in {Severity.CRITICAL, Severity.HIGH}
+                and not prior_gate.get("causal_proof_verified")
                 else repository_refs
             )
             collaborative_repository_verification = bool(

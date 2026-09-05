@@ -80,6 +80,7 @@ class JsonChatClient:
         }
         headers.update(self.extra_headers)
         max_attempts = 3
+        structured_retry_used = False
         for attempt in range(max_attempts):
             payload["messages"] = messages
             request = urllib.request.Request(
@@ -117,25 +118,38 @@ class JsonChatClient:
                         ledger.record_model(
                             role, self.provider, self.model, body.get("usage") or {},
                             int((time.monotonic() - started) * 1000), False,
-                            message + " (structured-output retry %d/%d)" % (
-                                attempt + 1, max_attempts - 1,
-                            ),
+                            message + " (structured-output retry available=%s)"
+                            % (not structured_retry_used),
                         )
-                    if attempt < max_attempts - 1:
-                        messages = [
-                            {
-                                "role": "system",
-                                "content": (
-                                    "You are a strict JSON syntax repair engine. Preserve the "
-                                    "input object's keys, values and meaning. Repair syntax only "
-                                    "and return one JSON object with no Markdown or explanation."
-                                ),
-                            },
-                            {
-                                "role": "user",
-                                "content": "Repair this malformed JSON object:\n" + content[:64000],
-                            },
-                        ]
+                    if not structured_retry_used and attempt < max_attempts - 1:
+                        structured_retry_used = True
+                        if body["choices"][0].get("finish_reason") == "length":
+                            # A truncated object has lost meaning that syntax repair
+                            # cannot recover. Regenerate from the task once, briefly,
+                            # using the same token allowance and total attempt cap.
+                            messages = [
+                                {"role": "system", "content": system},
+                                {"role": "user", "content": user + (
+                                    "\nThe previous response exceeded the output limit. "
+                                    "Return a compact complete JSON action. State each fact "
+                                    "once; retain every required decision and evidence field."
+                                )},
+                            ]
+                        else:
+                            messages = [
+                                {
+                                    "role": "system",
+                                    "content": (
+                                        "You are a strict JSON syntax repair engine. Preserve the "
+                                        "input object's keys, values and meaning. Repair syntax only "
+                                        "and return one JSON object with no Markdown or explanation."
+                                    ),
+                                },
+                                {
+                                    "role": "user",
+                                    "content": "Repair this malformed JSON object:\n" + content[:64000],
+                                },
+                            ]
                         continue
                     raise RuntimeError(message)
                 if ledger and trailing_values:

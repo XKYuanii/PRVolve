@@ -8,9 +8,9 @@ from evoagent.session.ledger import ExecutionLedger
 
 
 class FakeResponse:
-    def __init__(self, content):
+    def __init__(self, content, finish_reason="stop"):
         self.payload = json.dumps({
-            "choices": [{"message": {"content": content}}],
+            "choices": [{"message": {"content": content}, "finish_reason": finish_reason}],
             "usage": {"prompt_tokens": 10, "completion_tokens": 3},
         }).encode("utf-8")
 
@@ -25,6 +25,31 @@ class FakeResponse:
 
 
 class JsonChatClientTests(unittest.TestCase):
+    @mock.patch("evoagent.llm.client.urllib.request.urlopen")
+    def test_truncated_critic_regenerates_from_task_once_with_same_output_cap(self, urlopen):
+        urlopen.side_effect = [
+            FakeResponse('{"action":"final","decisions":[', finish_reason="length"),
+            FakeResponse('{"action":"final","decisions":[]}'),
+        ]
+        client = JsonChatClient("https://example.test", "secret", "model")
+        ledger = ExecutionLedger("test")
+        client.complete_json("critic", "role instructions", "original task", ledger, max_tokens=4000)
+        retry = json.loads(urlopen.call_args_list[1].args[0].data.decode("utf-8"))
+        self.assertEqual("role instructions", retry["messages"][0]["content"])
+        self.assertIn("original task", retry["messages"][1]["content"])
+        self.assertEqual(4000, retry["max_tokens"])
+        self.assertEqual(2, ledger.summary()["llm_calls"])
+
+    @mock.patch("evoagent.llm.client.urllib.request.urlopen")
+    def test_structured_output_repair_stops_after_one_failed_retry(self, urlopen):
+        urlopen.return_value = FakeResponse('{"action":')
+        client = JsonChatClient("https://example.test", "secret", "model")
+        ledger = ExecutionLedger("test")
+        with self.assertRaises(RuntimeError):
+            client.complete_json("critic", "system", "task", ledger)
+        self.assertEqual(2, urlopen.call_count)
+        self.assertEqual(2, ledger.summary()["failed_model_calls"])
+
     @mock.patch("evoagent.llm.client.urllib.request.urlopen")
     def test_invalid_structured_output_is_retried_and_accounted(self, urlopen):
         urlopen.side_effect = [FakeResponse('{"action":"final" "findings":[]}'), FakeResponse(

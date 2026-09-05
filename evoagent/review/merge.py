@@ -180,7 +180,7 @@ def candidates_from(rule_findings, worker_results):
 
 
 def _critic_proof_status(decision):
-    """Validate the Critic's compact causal proof for an accepted finding.
+    """Validate the shape of a Critic proof, not the truth of its prose.
 
     Boolean verdicts alone are too easy to assert without comparing the old
     and new behavior.  Keep the proof deliberately small, but require the
@@ -201,7 +201,8 @@ def _critic_proof_status(decision):
     contract = statement("contract")
     differential = bool(
         trigger and before and after and failure and contract
-        and " ".join(before.lower().split()) != " ".join(after.lower().split())
+        and (decision.get("accepted") is not True
+             or " ".join(before.lower().split()) != " ".join(after.lower().split()))
     )
 
     premises = proof.get("premises") or []
@@ -218,6 +219,8 @@ def _critic_proof_status(decision):
         "after": after[:1000],
         "failure": failure[:1000],
         "contract": contract[:1000],
+        "code_before": str(proof.get("code_before") or "")[:4000],
+        "code_after": str(proof.get("code_after") or "")[:4000],
         "premises": [
             {
                 "premise": str(item.get("premise") or "")[:1000],
@@ -230,8 +233,33 @@ def _critic_proof_status(decision):
     return differential, premises_verified, normalized
 
 
+def _rejection_change_grounded(decision, finding, evidence):
+    """A counter-proof must quote the actual edit, never infer old code from HEAD."""
+    proof = decision.get("causal_delta") or {}
+    if not isinstance(proof, dict) or not all(
+        isinstance(proof.get(key), str) for key in ("code_before", "code_after")
+    ):
+        return False
+    for evidence_id in decision.get("supporting_evidence_ids") or []:
+        ref = evidence.get(str(evidence_id), {})
+        output = ref.get("output") or {}
+        if ref.get("tool") != "changed_line" or not isinstance(output, dict):
+            continue
+        change = output.get("change") or {}
+        if (
+            output.get("found") is True and output.get("path") == finding.path
+            and output.get("line") == finding.line and change.get("complete") is True
+            and proof["code_before"].strip() == change["before"].strip()
+            and proof["code_after"].strip() == change["after"].strip()
+        ):
+            return True
+    return False
+
+
 def apply_critic(result, candidates):
-    evidence = collect_evidence(result.get("_observations") or [])
+    evidence = collect_evidence([
+        item for item in result.get("_observations") or [] if item.get("ok") is True
+    ])
     by_index = {
         int(item.get("finding_index")): item
         for item in result.get("decisions") or []
@@ -248,7 +276,7 @@ def apply_critic(result, candidates):
         differential, premises_verified, causal_delta = _critic_proof_status(
             decision or {}
         )
-        raw_accepted = bool(decision and decision.get("accepted"))
+        raw_accepted = bool(decision and decision.get("accepted") is True)
         if raw_accepted and not objections:
             if not differential:
                 objections.append(
@@ -263,9 +291,12 @@ def apply_critic(result, candidates):
         # verdict contradict its own explanation and could leak false positives.
         accepted = bool(raw_accepted and not objections)
         rejection_ready = bool(
-            decision and not raw_accepted and objections
+            decision and decision.get("accepted") is False and objections
             and differential and premises_verified
+            and _rejection_change_grounded(decision, finding, evidence)
         )
+        if decision and decision.get("accepted") is False and not rejection_ready:
+            objections.append("counter-proof is incomplete or not grounded in the cited before/after edit")
         verification = {
             key: bool(decision and decision.get(key))
             for key in (
@@ -446,6 +477,7 @@ def partition_publication(
         proof_backed_scanner = bool(
             scanner_refs and critic_fully_verified
         )
+        proof_backed_review = bool(critic_fully_verified and repository_refs)
         impact_claim = " ".join((
             finding.title, finding.explanation, finding.evidence,
         )).lower()
@@ -476,7 +508,7 @@ def partition_publication(
             reasons.append("repository context is unavailable")
         if not repository_refs and not proof_backed_scanner:
             reasons.append("no repository-backed tool evidence")
-        if finding.severity == Severity.LOW:
+        if finding.severity == Severity.LOW and not proof_backed_review:
             reasons.append(
                 "low-severity model finding remains advisory"
             )
@@ -518,14 +550,14 @@ def partition_publication(
         if (
             finding.source == "correctness-reliability"
             and hypothetical_scope_claim
-            and not claim_refs
+            and not claim_refs and not proof_backed_review
         ):
             reasons.append(
                 "hypothetical rejection claim lacks behavioral or configured-value evidence"
             )
         if (
             finding.severity in {Severity.CRITICAL, Severity.HIGH}
-            and not claim_refs and not proof_backed_scanner
+            and not claim_refs and not proof_backed_scanner and not proof_backed_review
         ):
             reasons.append(
                 "high-risk claim lacks behavioral or cross-call evidence"
@@ -541,6 +573,7 @@ def partition_publication(
                 "repository_evidence_count": len(repository_refs),
                 "claim_specific_evidence_count": len(claim_refs),
                 "scanner_corroborated": bool(scanner_refs),
+                "causal_proof_verified": proof_backed_review,
                 "publication_partition_passed": True,
             }
             published.append(finding)
