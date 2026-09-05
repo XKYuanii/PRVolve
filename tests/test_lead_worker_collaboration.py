@@ -149,11 +149,12 @@ class CrossDomainHandoffClient:
                     "objective": "Review state transitions.", "files": ["app.py"],
                 }]}
             if task["phase"] == "assess-workers":
-                # Deliberately omit the handoff. The protocol guard must route it
-                # through the existing Lead revision path.
                 return {
                     "action": "final", "revision_requests": [],
-                    "handoff_decisions": [], "critic_objective": "Verify candidates.",
+                    "handoff_decisions": [{
+                        "handoff_id": "security-1:state-transition", "action": "revise",
+                        "reason": "Trace the state transition in the owning Worker.",
+                    }], "critic_objective": "Verify candidates.",
                 }
             if task["phase"] == "finalize":
                 return {
@@ -286,7 +287,7 @@ class LeadWorkerCollaborationTests(unittest.TestCase):
         routed = first_assessment["handoff_decisions"][0]
         self.assertEqual("revise", routed["action"])
         self.assertEqual("reliability-1", routed["target_assignment_id"])
-        self.assertEqual("protocol-guard", routed["source"])
+        self.assertEqual("lead", routed["source"])
         self.assertEqual(2, client.correctness_calls)
         self.assertEqual(1, len(collaboration["revision_results"]))
         self.assertEqual(3, len(collaboration["worker_history"]))
@@ -324,7 +325,10 @@ class LeadWorkerCollaborationTests(unittest.TestCase):
         }}
 
         decision = AgenticReviewer._complete_assessment_protocol(
-            {"revision_requests": [], "handoff_decisions": []},
+            {"revision_requests": [], "handoff_decisions": [{
+                "handoff_id": "reliability-1:empty-input", "action": "revise",
+                "reason": "Check the caller contract.",
+            }]},
             delegations, worker_results, remaining_rounds=1,
         )
 
@@ -360,7 +364,10 @@ class LeadWorkerCollaborationTests(unittest.TestCase):
         }}
 
         decision = AgenticReviewer._complete_assessment_protocol(
-            {"revision_requests": [], "handoff_decisions": []},
+            {"revision_requests": [{
+                "assignment_id": "reliability-1", "worker": "correctness-reliability",
+                "guidance": "Check the missing-key contract.",
+            }], "handoff_decisions": []},
             delegations, worker_results, remaining_rounds=1,
         )
 

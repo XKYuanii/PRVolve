@@ -50,7 +50,7 @@ from .context import (
 from .merge import (
     apply_critic, apply_lead_final, attach_diff_ast_evidence, candidates_from,
     merge_findings, normalize_delegations, normalize_revision_requests,
-    partition_publication, public_decision, restore_findings, scanner_name,
+    partition_publication, public_decision, resolve_lead_reviews, restore_findings, scanner_name,
     skill_tool_permissions,
 )
 from .preflight import repository_preflight
@@ -304,10 +304,13 @@ class AgenticReviewer(Reviewer):
                 lambda: {"decision": public_decision(self._arbitrate(
                     session, run, candidates, critic_decisions, worker_results,
                     memory_context,
-                ))},
+                )), "candidates": [item.to_dict() for item in candidates]},
                 "Lead is arbitrating the final finding set",
             )
             lead_final = arbitrated["decision"]
+            candidates = restore_findings(arbitrated.get("candidates") or [
+                item.to_dict() for item in candidates
+            ])
             lead_accepted = apply_lead_final(lead_final, candidates)
             accepted, suggestions, publication_decisions = partition_publication(
                 rule_findings, candidates, lead_accepted, critic_decisions,
@@ -316,6 +319,7 @@ class AgenticReviewer(Reviewer):
                 publish_unverified_suggestions=bool(
                     self.structured_config.get("publish_unverified_suggestions", True)
                 ),
+                lead_reviews=lead_final.get("publication_reviews") or [],
             )
             collaboration = self._collaboration(
                 run, planned, executed, lead_final, publication_decisions,
@@ -883,7 +887,18 @@ class AgenticReviewer(Reviewer):
                     ][:2],
                     "handoff_ids": [], "evidence_targets": [],
                 })
+        explicitly_requested_assignments = {item["assignment_id"] for item in requests}
         provided = {}
+        for request in decision.get("revision_requests") or []:
+            if not isinstance(request, dict) or not str(request.get("guidance") or "").strip():
+                continue
+            for item_id in request.get("handoff_ids") or []:
+                if str(item_id) in pending_by_id:
+                    provided[str(item_id)] = {
+                        "handoff_id": str(item_id), "action": "revise",
+                        "target_assignment_id": str(request.get("assignment_id") or ""),
+                        "reason": str(request["guidance"])[:1000], "source": "lead",
+                    }
         for item in decision.get("handoff_decisions") or []:
             if not isinstance(item, dict):
                 continue
@@ -997,7 +1012,10 @@ class AgenticReviewer(Reviewer):
             if current and current["action"] == "defer":
                 routed.append(current)
                 continue
-            if remaining_rounds > 0 and target is not None:
+            explicitly_requested = bool(current and current["action"] == "revise") or bool(
+                target is not None and target["assignment_id"] in explicitly_requested_assignments
+            )
+            if remaining_rounds > 0 and target is not None and explicitly_requested:
                 ensure_request(item, target, item_id)
                 routed.append({
                     "handoff_id": item_id,
@@ -1005,15 +1023,16 @@ class AgenticReviewer(Reviewer):
                     "target_assignment_id": target["assignment_id"],
                     "reason": (
                         current["reason"] if current
-                        else "Protocol guard routed an unhandled Worker risk/evidence gap to its owner."
+                        else "Lead requested revision of this assignment."
                     ),
-                    "source": current["source"] if current else "protocol-guard",
+                    "source": "lead",
                 })
             else:
                 reason = (
                     "No revision round remains; preserve this item as unresolved."
                     if remaining_rounds <= 0
-                    else "No enabled assignment exists for target Worker %s."
+                    else "Lead did not request revision; preserve the evidence gap."
+                    if target is not None else "No enabled assignment exists for target Worker %s."
                     % item.get("target_worker", "")
                 )
                 routed.append({
@@ -1043,10 +1062,11 @@ class AgenticReviewer(Reviewer):
                     for index, item in enumerate(candidates)
                 ],
                 "critic_decisions": critic_decisions,
-                "worker_results": list(worker_results.values()),
                 "instruction": (
-                    "Return the indices that should be published. Resolve critic objections "
-                    "explicitly and prefer changed-line tool evidence."
+                    "Return publishable indices. For an inconclusive Critic verdict you may "
+                    "inspect the missing premise with repository tools and provide evidence_reviews "
+                    "to complete its proof. Selection alone cannot waive missing evidence. "
+                    "Do not repeat completed reviews or reopen verified counter-proofs."
                 ),
                 "recalled_memory": memory_context,
             }, run.suite, run.ledger, session.task_id,
@@ -1056,6 +1076,9 @@ class AgenticReviewer(Reviewer):
                 int(item["finding_index"])
                 for item in critic_decisions if item.get("accepted")
             ]
+        decision["publication_reviews"] = resolve_lead_reviews(
+            decision, candidates, critic_decisions,
+        )
         return decision
 
     def _run_assignments(

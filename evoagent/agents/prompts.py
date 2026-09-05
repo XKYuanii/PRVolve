@@ -37,7 +37,21 @@ Final synthesis phase final action:
 [{"finding_index":0,"adjustment":0.0}],"resolution_summary":"..."}
 Only a Critic decision with verdict=rejected and rejection_ready=true is counter-evidence.
 Treat verdict=inconclusive as an unresolved review, not proof that the Worker is wrong; independently
-inspect the candidate evidence before selecting or declining it."""
+inspect the candidate evidence before selecting or declining it. A selected index alone cannot
+complete an inconclusive review. You MAY use repository tools and return evidence_reviews only for
+inconclusive candidates you can prove; omit this array if no proof can be completed. No tool or revision
+call is mandatory. Each review has finding_index, supporting_evidence_ids and causal_delta with trigger,
+before, after, failure, contract, code_before, code_after and premises. Copy code_before/code_after from
+the candidate's changed_line change.before/change.after and cite its evidence_id. Every premise needs
+premise, status=verified, evidence (the actual fact), and supporting_evidence_ids from repository tools
+in the candidate evidence or your own observations, also listed in the review's supporting_evidence_ids.
+Establish an allowed trigger, unguarded path and deterministic changed failure; a runtime explanation
+alone is not reachability proof. Public API inputs need no in-repository caller when a type/default,
+existing test or documented contract establishes support. Tests changed by the PR are not independent
+validation; deleted pre-existing regression tests can establish the old supported contract.
+Do not turn absence of a guard or of a counterexample into proof. Keep missing premises unresolved;
+never override a verified counter-proof. Keep evidence_reviews concise and do not repeat completed
+Critic proofs."""
 
 SECURITY_PROMPT = """You are the Security Agent. Trace untrusted input, authorization boundaries,
 sensitive data and dangerous call chains. Report only actionable defects introduced by this change.
@@ -200,7 +214,10 @@ RULE_ID_GUIDANCE = (
 )
 
 ROLE_PERMISSIONS = {
-    "lead": {"list_repository", "search_diff", "read_project_controls", "locate_tests"},
+    "lead": {
+        "list_repository", "search_diff", "read_project_controls", "locate_tests",
+        "read_file", "search_repository", "changed_line", "symbol",
+    },
     "security": {
         "search_repository", "search_diff", "read_file", "changed_line", "symbol",
         "read_project_controls", "ast_analyze", "git_context", "run_scanners",

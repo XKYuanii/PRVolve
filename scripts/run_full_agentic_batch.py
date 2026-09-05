@@ -1,6 +1,7 @@
 """Run a resumable, progress-visible batch through the full Agentic reviewer."""
 import argparse
 from collections import Counter
+from functools import lru_cache
 import hashlib
 import json
 import os
@@ -24,6 +25,33 @@ from evoagent.eval.agentic import (  # noqa: E402
     validate_real_dataset,
 )
 from evoagent.llm.client import JsonChatClient  # noqa: E402
+
+
+@lru_cache(maxsize=1)
+def implementation_fingerprint() -> str:
+    digest = hashlib.sha256()
+    for directory, _folders, files in sorted(os.walk(os.path.join(ROOT, "evoagent"))):
+        for name in sorted(files):
+            if name.endswith(".py"):
+                path = os.path.join(directory, name)
+                digest.update(os.path.relpath(path, ROOT).replace("\\", "/").encode())
+                with open(path, "rb") as handle:
+                    digest.update(handle.read().replace(b"\r\n", b"\n"))
+    return digest.hexdigest()
+
+
+def require_compatible_report(path, expected):
+    if not os.path.isfile(path):
+        return
+    with open(path, encoding="utf-8") as handle:
+        previous = json.load(handle)
+    if (previous.get("configuration") != expected["configuration"]
+            or previous.get("model") != expected["model"]
+            or previous.get("dataset", {}).get("source_sha256")
+            != expected["dataset"]["source_sha256"]):
+        raise ValueError(
+            "Cannot mix versions/settings/datasets in %s; use a new --output for this run." % path
+        )
 
 
 def select_cases(cases: list, limit: int) -> list:
@@ -160,7 +188,7 @@ def build_report(
     harness, selected: list, completed: dict, config: dict,
     token_budget: int, time_budget: int, timeout: int,
     started: float, status: str, source_dataset_sha256: str,
-    judgment_metadata: dict,
+    judgment_metadata: dict, max_revision_rounds: int = 1,
 ) -> dict:
     ordered = [completed[case["id"]] for case in selected if case["id"] in completed]
     totals = harness._empty_totals()
@@ -191,6 +219,11 @@ def build_report(
             "token_budget_per_pr": token_budget,
             "time_budget_seconds_per_pr": time_budget,
             "model_request_timeout_seconds": timeout,
+            "max_revision_rounds": max_revision_rounds,
+            "revision_policy": "lead-opt-in",
+            "scanner_policy": "independent-reviewed-baseline",
+            "publication_policy": "critic-or-grounded-lead-proof-v1",
+            "implementation_sha256": implementation_fingerprint(),
         },
         "dataset": {
             "cases": len(selected),
@@ -232,11 +265,10 @@ def main() -> None:
     parser.add_argument("--token-budget", type=int, default=64000)
     parser.add_argument("--time-budget", type=int, default=120)
     parser.add_argument(
-        "--max-revision-rounds", type=int, default=0,
+        "--max-revision-rounds", type=int, default=1,
         help=(
-            "Rounds of Lead-guided rework a worker may receive. 0 keeps the "
-            "published one-pass baseline profile; raise it to measure what the "
-            "Lead's targeted guidance is worth on recall."
+            "Maximum optional Lead-selected revision rounds (default 1). "
+            "No revision is forced. Use 0 only for an explicit one-pass ablation."
         ),
     )
     parser.add_argument(
@@ -278,6 +310,8 @@ def main() -> None:
     args = parser.parse_args()
     if args.max_cases < 1:
         parser.error("--max-cases must be positive")
+    if args.max_revision_rounds < 0:
+        parser.error("--max-revision-rounds cannot be negative")
 
     settings = Settings.from_env()
     config = settings.resolved_llm()
@@ -314,6 +348,13 @@ def main() -> None:
         )
     allowed_ids = {case["id"] for case in selected}
     output = os.path.abspath(args.output)
+    profile = build_report(
+        ProductionEvaluationHarness(), selected, {}, config, args.token_budget,
+        args.time_budget, args.timeout, time.monotonic(), "running", source_dataset_sha256,
+        judgment_metadata, args.max_revision_rounds,
+    )
+    for report_path in [output, *args.seed_report]:
+        require_compatible_report(os.path.abspath(report_path), profile)
     completed = load_results(output, allowed_ids)
     for seed_report in args.seed_report:
         completed.update(load_results(
@@ -350,7 +391,7 @@ def main() -> None:
     save_report(output, build_report(
         harness, selected, completed, config, args.token_budget,
         args.time_budget, args.timeout, started, "running", source_dataset_sha256,
-        judgment_metadata,
+        judgment_metadata, args.max_revision_rounds,
     ))
     for index, case in enumerate(selected, 1):
         if case["id"] in completed:
@@ -374,7 +415,7 @@ def main() -> None:
         save_report(output, build_report(
             harness, selected, completed, config, args.token_budget,
             args.time_budget, args.timeout, started, "running", source_dataset_sha256,
-            judgment_metadata,
+            judgment_metadata, args.max_revision_rounds,
         ))
         print(
             "DONE %d/%d case=%s success=%s predicted=%d suggestions=%d "
@@ -392,7 +433,7 @@ def main() -> None:
     save_report(output, build_report(
         harness, selected, completed, config, args.token_budget,
         args.time_budget, args.timeout, started, "complete", source_dataset_sha256,
-        judgment_metadata,
+        judgment_metadata, args.max_revision_rounds,
     ))
     print("COMPLETE %s" % output, flush=True)
 

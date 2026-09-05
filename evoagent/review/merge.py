@@ -11,6 +11,7 @@ import json
 import re
 import textwrap
 import time
+from dataclasses import replace
 from typing import Iterable, List
 
 from ..agents.loop import collect_evidence
@@ -172,11 +173,11 @@ def normalize_revision_requests(raw, assignments):
 
 
 def candidates_from(rule_findings, worker_results):
-    """Scanner findings plus everything the workers reported, deduplicated."""
-    findings = list(rule_findings)
+    """Keep scanner claims independent until each has its own review verdict."""
+    findings = []
     for result in worker_results.values():
         findings.extend(restore_findings(result.get("findings") or []))
-    return merge_findings(findings)
+    return merge_findings(rule_findings) + merge_findings(findings)
 
 
 def _critic_proof_status(decision):
@@ -233,8 +234,8 @@ def _critic_proof_status(decision):
     return differential, premises_verified, normalized
 
 
-def _rejection_change_grounded(decision, finding, evidence):
-    """A counter-proof must quote the actual edit, never infer old code from HEAD."""
+def _change_grounded(decision, finding, evidence):
+    """Quote the actual edit; never infer old code from HEAD."""
     proof = decision.get("causal_delta") or {}
     if not isinstance(proof, dict) or not all(
         isinstance(proof.get(key), str) for key in ("code_before", "code_after")
@@ -293,7 +294,7 @@ def apply_critic(result, candidates):
         rejection_ready = bool(
             decision and decision.get("accepted") is False and objections
             and differential and premises_verified
-            and _rejection_change_grounded(decision, finding, evidence)
+            and _change_grounded(decision, finding, evidence)
         )
         if decision and decision.get("accepted") is False and not rejection_ready:
             objections.append("counter-proof is incomplete or not grounded in the cited before/after edit")
@@ -380,52 +381,104 @@ def apply_lead_final(decision, candidates):
     return accepted
 
 
+def resolve_lead_reviews(result, candidates, critic_decisions):
+    """Let the existing final arbiter close an inconclusive proof, not waive it.
+
+    Reuse the Critic proof validator. Require the exact edit and cited repository
+    facts for each premise; a selected index or confident summary is not a proof.
+    Verified counter-proofs cannot be overridden through this completion path.
+    """
+    critic_by_index = {item["finding_index"]: item for item in critic_decisions}
+    selected = {str(value) for value in result.get("accepted_finding_indices") or []}
+    evidence = {
+        str(ref["evidence_id"]): ref for finding in candidates
+        for ref in finding.evidence_refs
+        if isinstance(ref, dict) and ref.get("evidence_id")
+    }
+    evidence.update(collect_evidence([
+        item for item in result.get("_observations") or [] if item.get("ok") is True
+    ]))
+    reviews = []
+    for raw in result.get("evidence_reviews") or []:
+        if not isinstance(raw, dict) or str(raw.get("finding_index")) not in selected:
+            continue
+        rendered = str(raw.get("finding_index"))
+        if not rendered.isdigit() or int(rendered) >= len(candidates):
+            continue
+        index = int(rendered)
+        prior = critic_by_index.get(index, {})
+        if prior.get("publication_ready") or prior.get("rejection_ready"):
+            continue
+        finding = candidates[index]
+        review = {**raw, "finding_index": index, "accepted": True}
+        differential, verified, _ = _critic_proof_status(review)
+        cited = {str(value) for value in raw.get("supporting_evidence_ids") or []}
+        facts = repository_evidence_refs(replace(
+            finding, evidence_refs=[evidence[key] for key in cited if key in evidence]
+        ))
+        fact_ids = {str(ref["evidence_id"]) for ref in facts}
+        proof = raw.get("causal_delta")
+        premises = proof.get("premises") or [] if isinstance(proof, dict) else []
+        grounded = bool(
+            differential and verified and fact_ids
+            and _change_grounded(review, finding, evidence)
+            and all(
+                {str(value) for value in item.get("supporting_evidence_ids") or []}
+                .intersection(cited.intersection(fact_ids))
+                for item in premises
+            )
+        )
+        if not grounded or raw.get("objections"):
+            continue
+        finding.evidence_refs.extend(
+            evidence[key] for key in sorted(cited) if key in evidence
+            and evidence[key] not in finding.evidence_refs
+        )
+        reviews.append({
+            **review, "publication_ready": True, "rejection_ready": False,
+            "verdict": "accepted", "proof_source": "lead",
+            "introduced_by_diff": True, "reproducible": True,
+            "evidence_sufficient": True, "would_comment_on_real_pr": True,
+            "differential_causality": True, "premises_verified": True,
+        })
+    return reviews
+
+
 def partition_publication(
     rule_findings, candidates, lead_accepted, critic_decisions,
     repository_available, critic_required=True,
     publish_unverified_suggestions=True,
+    lead_reviews=None,
 ):
-    """Protect scanner-only findings and verify corroborated model discoveries.
-
-    A scanner hit that overlaps a Worker claim is evidence for that claim, not
-    permission to bypass semantic review.  Only scanner-only findings retain
-    the protected deterministic baseline behavior.
-    """
+    """Review each claim independently; deduplicate only publishable claims."""
     lead_identities = {finding_identity(item) for item in lead_accepted}
     critic_by_index = {
         int(item.get("finding_index")): item
         for item in critic_decisions or []
         if isinstance(item, dict) and str(item.get("finding_index", "")).isdigit()
     }
-    corroborating_scanner_evidence = {
-        str(ref.get("evidence_id"))
-        for finding in candidates if not is_deterministic_finding(finding)
-        for ref in finding.evidence_refs if isinstance(ref, dict)
-        and str(ref.get("tool") or "") in {
-            "local-rule-scanner", "declarative-scanner",
-        }
-        and str(ref.get("evidence_id") or "")
-    }
-    published = [
-        finding for finding in rule_findings
-        if not corroborating_scanner_evidence.intersection({
-            str(ref.get("evidence_id"))
-            for ref in finding.evidence_refs if isinstance(ref, dict)
-            and str(ref.get("evidence_id") or "")
-        })
-    ]
+    lead_by_index = {item["finding_index"]: item for item in lead_reviews or []}
+    published = []
     suggestions = []
     decisions = []
     for index, finding in enumerate(candidates):
         identity = finding_identity(finding)
         lead_selected = identity in lead_identities
         critic = critic_by_index.get(index) or {}
+        review = critic
+        if not critic.get("publication_ready") and not critic.get("rejection_ready"):
+            review = lead_by_index.get(index) or critic
         if is_deterministic_finding(finding):
-            finding.disposition = "confirmed"
+            rejected = bool(critic.get("rejection_ready"))
+            finding.disposition = "rejected" if rejected else "confirmed"
+            if not rejected:
+                published.append(finding)
             decisions.append({
                 "finding_index": index, "rule_id": finding.rule_id,
-                "source": finding.source, "disposition": "confirmed",
-                "reasons": ["protected deterministic scanner baseline"],
+                "path": finding.path, "line": finding.line,
+                "source": finding.source, "disposition": finding.disposition,
+                "reasons": ["verified counter-proof for this scanner claim" if rejected
+                            else "independent deterministic scanner baseline"],
             })
             continue
 
@@ -447,11 +500,11 @@ def partition_publication(
         reasons = []
         if not lead_selected:
             reasons.append("Lead did not select the candidate")
-        if critic_required and not critic.get("publication_ready"):
+        if critic_required and not review.get("publication_ready"):
             reasons.append(
                 "Critic rejected the candidate with a verified counter-proof"
                 if critic.get("rejection_ready")
-                else "Critic did not complete a conclusive evidence review"
+                else "Neither Critic nor Lead completed the publication proof"
             )
         repository_refs = repository_evidence_refs(finding)
         claim_refs = claim_specific_high_risk_evidence_refs(finding)
@@ -463,12 +516,12 @@ def partition_publication(
         ]
         severity_adjustment = {}
         critic_ready = bool(
-            not critic_required or critic.get("publication_ready")
+            not critic_required or review.get("publication_ready")
         )
         critic_fully_verified = bool(
             critic_required
-            and critic.get("publication_ready")
-            and all(critic.get(key) is True for key in (
+            and review.get("publication_ready")
+            and all(review.get(key) is True for key in (
                 "introduced_by_diff", "reproducible",
                 "evidence_sufficient", "would_comment_on_real_pr",
                 "differential_causality", "premises_verified",
@@ -567,9 +620,10 @@ def partition_publication(
             finding.disposition = "confirmed"
             finding.gate = {
                 "lead_selected": True,
-                "critic_publication_ready": bool(
-                    critic_required and critic.get("publication_ready")
+                "publication_review_ready": bool(
+                    critic_required and review.get("publication_ready")
                 ),
+                "proof_source": review.get("proof_source", "critic"),
                 "repository_evidence_count": len(repository_refs),
                 "claim_specific_evidence_count": len(claim_refs),
                 "scanner_corroborated": bool(scanner_refs),
@@ -598,6 +652,8 @@ def partition_publication(
             "finding_index": index, "rule_id": finding.rule_id,
             "original_rule_id": finding.original_rule_id,
             "source": finding.source, "disposition": disposition,
+            "path": finding.path, "line": finding.line,
+            "proof_source": review.get("proof_source", "critic"),
             "reasons": reasons,
             "repository_evidence_ids": [
                 item.get("evidence_id") for item in repository_refs

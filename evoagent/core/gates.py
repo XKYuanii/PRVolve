@@ -70,12 +70,12 @@ class FindingGate:
             collaborative_repository_verification = bool(
                 supporting_repository_refs
                 and prior_gate.get("lead_selected")
-                and prior_gate.get("critic_publication_ready")
+                and (prior_gate.get("publication_review_ready") or prior_gate.get("critic_publication_ready"))
                 and prior_gate.get("publication_partition_passed")
             ) or bool(
                 prior_gate.get("scanner_corroborated")
                 and prior_gate.get("lead_selected")
-                and prior_gate.get("critic_publication_ready")
+                and (prior_gate.get("publication_review_ready") or prior_gate.get("critic_publication_ready"))
                 and prior_gate.get("publication_partition_passed")
             )
             trusted_source = (
@@ -107,6 +107,7 @@ class FindingGate:
                 counters["release"] += 1
 
             finding.gate = {
+                **prior_gate,
                 "passed": not reasons, "reasons": reasons,
                 "exact_location_evidence": exact_line,
                 "strong_evidence_count": len(strong_refs),

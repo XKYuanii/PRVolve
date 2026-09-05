@@ -1941,7 +1941,7 @@ class AgenticEvaluationTests(unittest.TestCase):
             "unresolved", result["requirement_resolutions"][0]["status"]
         )
 
-    def test_high_risk_unresolved_hypothesis_triggers_same_worker_revision(self):
+    def test_high_risk_unresolved_hypothesis_does_not_force_revision(self):
         delegations = [{
             "assignment_id": "security-1", "worker": "security",
             "files": ["app.py"],
@@ -1961,11 +1961,8 @@ class AgenticEvaluationTests(unittest.TestCase):
             delegations, worker_results, remaining_rounds=1,
         )
 
-        self.assertEqual("security-1", decision["revision_requests"][0]["assignment_id"])
-        self.assertEqual(
-            ["security-1:auth-boundary"],
-            decision["revision_requests"][0]["handoff_ids"],
-        )
+        self.assertEqual([], decision["revision_requests"])
+        self.assertEqual("defer", decision["handoff_decisions"][0]["action"])
 
     def test_suggestion_metrics_measure_recovery_without_publishing_the_claim(self):
         suggestion = Finding(
@@ -2049,7 +2046,7 @@ class AgenticEvaluationTests(unittest.TestCase):
             name = "mixed"
 
             def review_case(self, _case, _parsed):
-                return [scanner_first, scanner_second]
+                return [worker, scanner_second]
 
             def evaluation_summary(self):
                 return {

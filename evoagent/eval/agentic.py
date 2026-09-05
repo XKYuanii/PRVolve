@@ -334,23 +334,19 @@ class ProductionEvaluationHarness(EndToEndEvaluationHarness):
         scanner_findings = merge_findings(self._restore_findings(
             agentic_summary.get("scanner_finding_details") or []
         ))
-        confirmed_worker_counts = Counter()
-        for decision in agentic_summary.get("publication_decisions") or []:
-            if not isinstance(decision, dict) or decision.get("disposition") != "confirmed":
-                continue
-            source = str(decision.get("source") or "")
-            if source.startswith(("local-rule-scanner", "declarative-scanner:")):
-                continue
-            # Publication decisions carry both values after a Critic taxonomy
-            # correction. Attribute the accepted result by its final rule id.
-            rule_id = normalize_rule_id(decision.get("rule_id") or "")
-            confirmed_worker_counts[(source, rule_id)] += 1
-        published_worker_findings = []
-        for finding in worker_findings:
-            key = (str(finding.source or ""), normalize_rule_id(finding.rule_id))
-            if confirmed_worker_counts[key] > 0:
-                published_worker_findings.append(finding)
-                confirmed_worker_counts[key] -= 1
+        # Score what survived ALL gates, using final taxonomy and locations.
+        # A partition verdict is not a published finding; a raw scanner hit
+        # that never reaches output is not a publication rescue either.
+        published = self._restore_findings(result.get("predicted_findings") or [])
+        scanner_sources = ("local-rule-scanner", "declarative-scanner:")
+        published_worker_findings = [
+            finding for finding in published
+            if not str(finding.source or "").startswith(scanner_sources)
+        ]
+        published_scanner_findings = [
+            finding for finding in published
+            if str(finding.source or "").startswith(scanner_sources)
+        ]
 
         worker_strict = one_to_one_match(
             expected, worker_findings, self.line_tolerance
@@ -380,6 +376,16 @@ class ProductionEvaluationHarness(EndToEndEvaluationHarness):
         }
         scanner_strict_expected = {item.expected_index for item in scanner_strict}
         scanner_target_expected = {item.expected_index for item in scanner_targets}
+        published_scanner_strict_expected = {
+            item.expected_index for item in one_to_one_match(
+                expected, published_scanner_findings, self.line_tolerance,
+            )
+        }
+        published_scanner_target_expected = {
+            item.expected_index for item in one_to_one_target_match(
+                expected, published_scanner_findings,
+            )
+        }
 
         result.update({
             "worker_formal_predictions": len(worker_findings),
@@ -398,10 +404,10 @@ class ProductionEvaluationHarness(EndToEndEvaluationHarness):
                 scanner_target_expected - worker_target_expected
             ),
             "scanner_publication_rescue_strict_tp": len(
-                scanner_strict_expected - published_worker_strict_expected
+                published_scanner_strict_expected - published_worker_strict_expected
             ),
             "scanner_publication_rescue_target_tp": len(
-                scanner_target_expected - published_worker_target_expected
+                published_scanner_target_expected - published_worker_target_expected
             ),
         })
 
