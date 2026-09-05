@@ -8,6 +8,7 @@ from evoagent.core.diff_parser import parse_unified_diff
 from evoagent.core.gates import FindingGate
 from evoagent.core.models import Finding, Severity
 from evoagent.eval.agentic import ProductionEvaluationHarness
+from evoagent.eval.agentic import ProductArmReviewer
 from evoagent.review.merge import (
     candidates_from, partition_publication, resolve_lead_reviews,
 )
@@ -152,3 +153,16 @@ class PublicationArbitrationTests(unittest.TestCase):
     def test_lead_can_read_evidence_for_final_arbitration(self):
         self.assertTrue({"read_file", "changed_line", "search_repository", "symbol"}
                         .issubset(ROLE_PERMISSIONS["lead"]))
+
+    def test_product_evaluation_defaults_to_one_optional_revision_round(self):
+        # Constructor behavior is checked without a model call by using a tiny
+        # compatible fake below; zero remains an explicit ablation setting.
+        class Client:
+            model = "fake"
+
+        default = ProductArmReviewer("full-agentic", Client(), 4096)
+        ablation = ProductArmReviewer(
+            "full-agentic", Client(), 4096, max_revision_rounds=0,
+        )
+        self.assertEqual(1, default.evaluation_config()["max_revision_rounds"])
+        self.assertEqual(0, ablation.evaluation_config()["max_revision_rounds"])

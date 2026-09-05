@@ -98,7 +98,7 @@ class ProductArmReviewer:
 
     def __init__(
         self, arm: str, client: JsonChatClient, total_token_budget: int,
-        total_time_budget_seconds: int = 120, max_revision_rounds: int = 0,
+        total_time_budget_seconds: int = 120, max_revision_rounds: int = 1,
     ):
         if arm not in ARM_TOPOLOGY:
             raise ValueError("unknown evaluation arm: %s" % arm)
@@ -127,10 +127,9 @@ class ProductArmReviewer:
         self.per_role_time_budget_seconds = per_role_seconds
         self.expected_roles = roles
         self.store = _EvaluationTaskStore(task_input)
-        # The default keeps evaluation arms on the stable one-pass profile, so
-        # published baselines stay comparable. Raising it is how a run measures
-        # what the Lead's targeted revision guidance is worth on recall; the
-        # value used is recorded in evaluation_config().
+        # One bounded round is available by default, but only an explicit Lead
+        # request executes it. Pass zero explicitly for a one-pass ablation;
+        # the value used is recorded in evaluation_config().
         structured_config = {
             "max_revision_rounds": max(0, int(max_revision_rounds)),
             "publish_unverified_suggestions": False,

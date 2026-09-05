@@ -2384,7 +2384,9 @@ class AgenticEvaluationTests(unittest.TestCase):
         }
         parsed = parse_unified_diff(DIFF)
         for arm, calls in expected_calls.items():
-            reviewer = ProductArmReviewer(arm, FakeClient(), 4096, 40)
+            reviewer = ProductArmReviewer(
+                arm, FakeClient(), 4096, 40, max_revision_rounds=0,
+            )
             findings = reviewer.review(DIFF, parsed)
             self.assertEqual(["SEC-PATH-TRAVERSAL"], [item.rule_id for item in findings])
             actual = {}
