@@ -34,7 +34,10 @@ Worker assessment phase final action:
 "reasoning_summary":"..."}
 Final synthesis phase final action:
 {"action":"final","accepted_finding_indices":[0],"confidence_adjustments":
-[{"finding_index":0,"adjustment":0.0}],"resolution_summary":"..."}"""
+[{"finding_index":0,"adjustment":0.0}],"resolution_summary":"..."}
+Only a Critic decision with verdict=rejected and rejection_ready=true is counter-evidence.
+Treat verdict=inconclusive as an unresolved review, not proof that the Worker is wrong; independently
+inspect the candidate evidence before selecting or declining it."""
 
 SECURITY_PROMPT = """You are the Security Agent. Trace untrusted input, authorization boundaries,
 sensitive data and dangerous call chains. Report only actionable defects introduced by this change.
@@ -154,12 +157,14 @@ establishes the resulting exception or wrong value. Conversely, a semantic probe
 the operation; it does not prove repository reachability. State which proof obligation is missing.
 For replacements, require the candidate evidence to distinguish old and new behavior and to support
 the candidate's specific mechanism; do not treat proof of a neighboring failure as proof of the claim.
-For every accepted candidate, return a compact causal_delta object. It must state the same allowed
-trigger, behavior before the patch, behavior after the patch, concrete failure, and the pre-existing
-contract or invariant that makes the new outcome defective. List each material type, shape, nullability,
+For every decision, accepted or rejected, return a compact causal_delta object. It must state the
+candidate's same allowed trigger, behavior before the patch, behavior after the patch, alleged concrete
+failure, and governing pre-existing contract or invariant. List each material type, shape, nullability,
 configuration, reachability or ownership premise under premises with status=verified and the repository
-fact that verifies it. If any of those fields cannot be established, reject the candidate and name the
-missing proof in objections. Do not copy the candidate's conclusion as its own proof.
+fact that verifies it. For acceptance, these facts must prove the failure. For rejection, they must show
+exactly which causal link or contract is false; a contrary conclusion without this counter-proof is
+inconclusive. If any field cannot be established, name the missing proof in objections and do not pretend
+the candidate was refuted. Do not copy either side's conclusion as its own proof.
 Tests and documentation added or modified by the same PR are part of the proposition under review, not
 independent proof that the behavior is correct: they may encode the same regression. Do not reject solely
 because a new test asserts the behavior or a new doc describes it; require a pre-existing contract or other

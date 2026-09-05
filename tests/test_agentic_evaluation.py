@@ -963,6 +963,49 @@ class AgenticEvaluationTests(unittest.TestCase):
             decisions[0]["objections"],
         )
 
+    def test_critic_rejection_without_counter_proof_is_inconclusive(self):
+        candidate = Finding(
+            rule_id="CWE-248", severity=Severity.MEDIUM,
+            title="Removed type guard can crash", explanation="A new type reaches lookup.",
+            path="app.py", line=10, evidence="if isinstance(value, Node):",
+            fix="Restore the narrow guard.", test="Cover the formerly supported type.",
+            confidence=0.8, source="correctness-reliability",
+        )
+        result = {
+            "decisions": [{
+                "finding_index": 0, "accepted": False,
+                "objections": ["The new type is safe."],
+            }],
+            "_observations": [],
+        }
+
+        _candidates, decisions = apply_critic(result, [candidate])
+
+        self.assertFalse(decisions[0]["rejection_ready"])
+        self.assertEqual("inconclusive", decisions[0]["verdict"])
+
+    def test_critic_rejection_with_counter_proof_is_conclusive(self):
+        candidate = Finding(
+            rule_id="CWE-248", severity=Severity.MEDIUM,
+            title="Removed type guard can crash", explanation="A new type reaches lookup.",
+            path="app.py", line=10, evidence="if isinstance(value, Node):",
+            fix="Restore the narrow guard.", test="Cover the formerly supported type.",
+            confidence=0.8, source="correctness-reliability",
+        )
+        result = {
+            "decisions": [{
+                "finding_index": 0, "accepted": False,
+                "objections": ["The caller rejects that type before this branch."],
+                "causal_delta": self._causal_delta(),
+            }],
+            "_observations": [],
+        }
+
+        _candidates, decisions = apply_critic(result, [candidate])
+
+        self.assertTrue(decisions[0]["rejection_ready"])
+        self.assertEqual("rejected", decisions[0]["verdict"])
+
     def test_critic_cannot_accept_while_reporting_blocking_objections(self):
         candidate = Finding(
             rule_id="CWE-682", severity=Severity.MEDIUM,

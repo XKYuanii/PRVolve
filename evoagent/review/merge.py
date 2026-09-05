@@ -248,7 +248,8 @@ def apply_critic(result, candidates):
         differential, premises_verified, causal_delta = _critic_proof_status(
             decision or {}
         )
-        if decision and decision.get("accepted") and not objections:
+        raw_accepted = bool(decision and decision.get("accepted"))
+        if raw_accepted and not objections:
             if not differential:
                 objections.append(
                     "critic omitted a complete before/after causal proof"
@@ -260,7 +261,11 @@ def apply_critic(result, candidates):
         # ``objections`` is the Critic's list of blocking reasons.  Treating a
         # response as accepted while that list is non-empty made the structured
         # verdict contradict its own explanation and could leak false positives.
-        accepted = bool(decision and decision.get("accepted") and not objections)
+        accepted = bool(raw_accepted and not objections)
+        rejection_ready = bool(
+            decision and not raw_accepted and objections
+            and differential and premises_verified
+        )
         verification = {
             key: bool(decision and decision.get(key))
             for key in (
@@ -305,6 +310,11 @@ def apply_critic(result, candidates):
         decisions.append({
             "finding_index": index, "accepted": accepted,
             "publication_ready": publication_ready,
+            "rejection_ready": rejection_ready,
+            "verdict": (
+                "accepted" if publication_ready
+                else "rejected" if rejection_ready else "inconclusive"
+            ),
             "recommended_confidence_adjustment": recommended_adjustment,
             "corrected_rule_id": corrected_rule_id,
             **verification,
@@ -407,7 +417,11 @@ def partition_publication(
         if not lead_selected:
             reasons.append("Lead did not select the candidate")
         if critic_required and not critic.get("publication_ready"):
-            reasons.append("Critic did not complete all publication checks")
+            reasons.append(
+                "Critic rejected the candidate with a verified counter-proof"
+                if critic.get("rejection_ready")
+                else "Critic did not complete a conclusive evidence review"
+            )
         repository_refs = repository_evidence_refs(finding)
         claim_refs = claim_specific_high_risk_evidence_refs(finding)
         scanner_refs = [
