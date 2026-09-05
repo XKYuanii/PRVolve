@@ -1,0 +1,862 @@
+{
+  "completed": [
+    {
+      "base_sha": "9cdccaee36962872bd6adbc23923c58c81caec9b",
+      "clean": {
+        "files": 340,
+        "head_sha": "c6ed7988335b174563596dee16afc7c4ada15db4",
+        "path": "G:\\study\\Computer\\java\\EvoAgent\\output\\python-100-repo-benchmark-v1\\checkouts\\python-public-autogis-wrong-capability-key-63-fix"
+      },
+      "head_sha": "c6ed7988335b174563596dee16afc7c4ada15db4",
+      "pull_request": 63,
+      "regression": {
+        "files": 340,
+        "head_sha": "9cdccaee36962872bd6adbc23923c58c81caec9b",
+        "path": "G:\\study\\Computer\\java\\EvoAgent\\output\\python-100-repo-benchmark-v1\\checkouts\\python-public-autogis-wrong-capability-key-63-regression"
+      },
+      "repository": "0bnoxide/AutoGIS",
+      "validated_defect_line": true
+    },
+    {
+      "base_sha": "f61f6ec4554f5ebdede5533e2e49943cfa02af07",
+      "clean": {
+        "files": 1208,
+        "head_sha": "79449c155a7ebd0c857a62bcd7955c61bb742a55",
+        "path": "G:\\study\\Computer\\java\\EvoAgent\\output\\python-100-repo-benchmark-v1\\checkouts\\python-public-naturo-keyerror-user-message-1181-fix"
+      },
+      "head_sha": "79449c155a7ebd0c857a62bcd7955c61bb742a55",
+      "pull_request": 1181,
+      "regression": {
+        "files": 1208,
+        "head_sha": "f61f6ec4554f5ebdede5533e2e49943cfa02af07",
+        "path": "G:\\study\\Computer\\java\\EvoAgent\\output\\python-100-repo-benchmark-v1\\checkouts\\python-public-naturo-keyerror-user-message-1181-regression"
+      },
+      "repository": "AcePeak/naturo",
+      "validated_defect_line": true
+    },
+    {
+      "base_sha": "2715734f4b1b886fe8f02e852b4ebde5778eb1eb",
+      "clean": {
+        "files": 23,
+        "head_sha": "435898b1dee018568f739bf4ab591fa5595d6b04",
+        "path": "G:\\study\\Computer\\java\\EvoAgent\\output\\python-100-repo-benchmark-v1\\checkouts\\python-public-auto-post-history-missing-soal-3-fix"
+      },
+      "head_sha": "435898b1dee018568f739bf4ab591fa5595d6b04",
+      "pull_request": 3,
+      "regression": {
+        "files": 23,
+        "head_sha": "2715734f4b1b886fe8f02e852b4ebde5778eb1eb",
+        "path": "G:\\study\\Computer\\java\\EvoAgent\\output\\python-100-repo-benchmark-v1\\checkouts\\python-public-auto-post-history-missing-soal-3-regression"
+      },
+      "repository": "akunnft-ux/auto-post-soal-matematika",
+      "validated_defect_line": true
+    },
+    {
+      "base_sha": "43c9edef47d3f1294f2bb85e7b50b7884e9128e1",
+      "clean": {
+        "files": 103,
+        "head_sha": "e240eae1797fdad29d99b191778f731fd7fa22ed",
+        "path": "G:\\study\\Computer\\java\\EvoAgent\\output\\python-100-repo-benchmark-v1\\checkouts\\python-public-auto-re-agent-empty-name-tokens-11-fix"
+      },
+      "head_sha": "e240eae1797fdad29d99b191778f731fd7fa22ed",
+      "pull_request": 11,
+      "regression": {
+        "files": 103,
+        "head_sha": "43c9edef47d3f1294f2bb85e7b50b7884e9128e1",
+        "path": "G:\\study\\Computer\\java\\EvoAgent\\output\\python-100-repo-benchmark-v1\\checkouts\\python-public-auto-re-agent-empty-name-tokens-11-regression"
+      },
+      "repository": "AlainSainteCroix/auto-re-agent",
+      "validated_defect_line": true
+    },
+    {
+      "base_sha": "b19893ad9c28e44390d7cb89296940fee39c648c",
+      "clean": {
+        "files": 89,
+        "head_sha": "646ebe32a3127672b0d394443d0c4d8f9156b899",
+        "path": "G:\\study\\Computer\\java\\EvoAgent\\output\\python-100-repo-benchmark-v1\\checkouts\\python-public-b3agente-empty-ttl-env-1-fix"
+      },
+      "head_sha": "646ebe32a3127672b0d394443d0c4d8f9156b899",
+      "pull_request": 1,
+      "regression": {
+        "files": 89,
+        "head_sha": "b19893ad9c28e44390d7cb89296940fee39c648c",
+        "path": "G:\\study\\Computer\\java\\EvoAgent\\output\\python-100-repo-benchmark-v1\\checkouts\\python-public-b3agente-empty-ttl-env-1-regression"
+      },
+      "repository": "AlexandreCamerini/b3agente",
+      "validated_defect_line": true
+    },
+    {
+      "base_sha": "e4941de6eef113a9e1c41493e3d2f560d45492a8",
+      "clean": {
+        "files": 154,
+        "head_sha": "f7dc2754c1afa1a9d78e87985df7350375ae873c",
+        "path": "G:\\study\\Computer\\java\\EvoAgent\\output\\python-100-repo-benchmark-v1\\checkouts\\python-public-susabiyu-missing-category-18-fix"
+      },
+      "head_sha": "f7dc2754c1afa1a9d78e87985df7350375ae873c",
+      "pull_request": 18,
+      "regression": {
+        "files": 154,
+        "head_sha": "e4941de6eef113a9e1c41493e3d2f560d45492a8",
+        "path": "G:\\study\\Computer\\java\\EvoAgent\\output\\python-100-repo-benchmark-v1\\checkouts\\python-public-susabiyu-missing-category-18-regression"
+      },
+      "repository": "amami-cell/susabiyu-ig-auto",
+      "validated_defect_line": true
+    },
+    {
+      "base_sha": "ff73c6ec942de0383a43a44382aef1bc19dba249",
+      "clean": {
+        "files": 371,
+        "head_sha": "d14a85aff9c13cb8aa9e5fb0ed5729923d198ddd",
+        "path": "G:\\study\\Computer\\java\\EvoAgent\\output\\python-100-repo-benchmark-v1\\checkouts\\python-public-bitbucket-nested-admin-user-1641-fix"
+      },
+      "head_sha": "d14a85aff9c13cb8aa9e5fb0ed5729923d198ddd",
+      "pull_request": 1641,
+      "regression": {
+        "files": 371,
+        "head_sha": "ff73c6ec942de0383a43a44382aef1bc19dba249",
+        "path": "G:\\study\\Computer\\java\\EvoAgent\\output\\python-100-repo-benchmark-v1\\checkouts\\python-public-bitbucket-nested-admin-user-1641-regression"
+      },
+      "repository": "atlassian-api/atlassian-python-api",
+      "validated_defect_line": true
+    },
+    {
+      "base_sha": "5867104e32c82a26b468780811b357c6db8f0598",
+      "clean": {
+        "files": 19,
+        "head_sha": "0a8e85664f283e8068155832fb127e8f96de1734",
+        "path": "G:\\study\\Computer\\java\\EvoAgent\\output\\python-100-repo-benchmark-v1\\checkouts\\python-public-mcp-empty-argv-40-fix"
+      },
+      "head_sha": "0a8e85664f283e8068155832fb127e8f96de1734",
+      "pull_request": 40,
+      "regression": {
+        "files": 19,
+        "head_sha": "5867104e32c82a26b468780811b357c6db8f0598",
+        "path": "G:\\study\\Computer\\java\\EvoAgent\\output\\python-100-repo-benchmark-v1\\checkouts\\python-public-mcp-empty-argv-40-regression"
+      },
+      "repository": "AuroraQuen/MCP",
+      "validated_defect_line": true
+    },
+    {
+      "base_sha": "9baaa4dfe52e90ce2a2097e6803e63c326e8d4f7",
+      "clean": {
+        "files": 40,
+        "head_sha": "0d9467817eb318f3bf5a8b96a314bbd233e2f01f",
+        "path": "G:\\study\\Computer\\java\\EvoAgent\\output\\python-100-repo-benchmark-v1\\checkouts\\python-public-conhamriver-string-duration-29-fix"
+      },
+      "head_sha": "0d9467817eb318f3bf5a8b96a314bbd233e2f01f",
+      "pull_request": 29,
+      "regression": {
+        "files": 40,
+        "head_sha": "9baaa4dfe52e90ce2a2097e6803e63c326e8d4f7",
+        "path": "G:\\study\\Computer\\java\\EvoAgent\\output\\python-100-repo-benchmark-v1\\checkouts\\python-public-conhamriver-string-duration-29-regression"
+      },
+      "repository": "benevpi/conhamriver",
+      "validated_defect_line": true
+    },
+    {
+      "base_sha": "118463eacfd0da291ba65f7bfe6fdfc16846ece9",
+      "clean": {
+        "files": 82,
+        "head_sha": "5d7867c5bf0cf135bdc15ff1bde7ac968b122124",
+        "path": "G:\\study\\Computer\\java\\EvoAgent\\output\\python-100-repo-benchmark-v1\\checkouts\\python-public-mcp-db-optional-asyncpg-exception-8-fix"
+      },
+      "head_sha": "5d7867c5bf0cf135bdc15ff1bde7ac968b122124",
+      "pull_request": 8,
+      "regression": {
+        "files": 82,
+        "head_sha": "118463eacfd0da291ba65f7bfe6fdfc16846ece9",
+        "path": "G:\\study\\Computer\\java\\EvoAgent\\output\\python-100-repo-benchmark-v1\\checkouts\\python-public-mcp-db-optional-asyncpg-exception-8-regression"
+      },
+      "repository": "Bright0505/mcp-db",
+      "validated_defect_line": true
+    },
+    {
+      "base_sha": "d778c07a5ddacc9c301ca6c84f054bc060f20f2c",
+      "clean": {
+        "files": 186,
+        "head_sha": "7c119a9e5971d50e098256a9222d2bdfeaa18757",
+        "path": "G:\\study\\Computer\\java\\EvoAgent\\output\\python-100-repo-benchmark-v1\\checkouts\\python-public-voltaire-arbitrum-fee-tasks-57-fix"
+      },
+      "head_sha": "7c119a9e5971d50e098256a9222d2bdfeaa18757",
+      "pull_request": 57,
+      "regression": {
+        "files": 186,
+        "head_sha": "d778c07a5ddacc9c301ca6c84f054bc060f20f2c",
+        "path": "G:\\study\\Computer\\java\\EvoAgent\\output\\python-100-repo-benchmark-v1\\checkouts\\python-public-voltaire-arbitrum-fee-tasks-57-regression"
+      },
+      "repository": "candidelabs/voltaire",
+      "validated_defect_line": true
+    },
+    {
+      "base_sha": "34068052c52cce4a9edd5c00fdddb52d8c1c5f58",
+      "clean": {
+        "files": 113,
+        "head_sha": "a0d650b18dff927a64f6d925da1dd0647e566039",
+        "path": "G:\\study\\Computer\\java\\EvoAgent\\output\\python-100-repo-benchmark-v1\\checkouts\\python-public-la-searcher-missing-reply-markup-562-fix"
+      },
+      "head_sha": "a0d650b18dff927a64f6d925da1dd0647e566039",
+      "pull_request": 562,
+      "regression": {
+        "files": 113,
+        "head_sha": "34068052c52cce4a9edd5c00fdddb52d8c1c5f58",
+        "path": "G:\\study\\Computer\\java\\EvoAgent\\output\\python-100-repo-benchmark-v1\\checkouts\\python-public-la-searcher-missing-reply-markup-562-regression"
+      },
+      "repository": "cherrytea-dev/la_searcher_bot",
+      "validated_defect_line": true
+    },
+    {
+      "base_sha": "a78b530312b5427bfc603c7453677aae3c0bc134",
+      "clean": {
+        "files": 37,
+        "head_sha": "e89c03b4eb315b57ce98ea9bff0b656556a25f70",
+        "path": "G:\\study\\Computer\\java\\EvoAgent\\output\\python-100-repo-benchmark-v1\\checkouts\\python-public-zmk-failed-prefix-7-fix"
+      },
+      "head_sha": "e89c03b4eb315b57ce98ea9bff0b656556a25f70",
+      "pull_request": 7,
+      "regression": {
+        "files": 37,
+        "head_sha": "a78b530312b5427bfc603c7453677aae3c0bc134",
+        "path": "G:\\study\\Computer\\java\\EvoAgent\\output\\python-100-repo-benchmark-v1\\checkouts\\python-public-zmk-failed-prefix-7-regression"
+      },
+      "repository": "cormoran/zmk-west-commands",
+      "validated_defect_line": true
+    },
+    {
+      "base_sha": "af3d88fd6e0ec2979198631eeb28ba097f3e17a1",
+      "clean": {
+        "files": 274,
+        "head_sha": "98ea920a196b8e42efe429be89105ad9bf7d2037",
+        "path": "G:\\study\\Computer\\java\\EvoAgent\\output\\python-100-repo-benchmark-v1\\checkouts\\python-public-ephemeraldaddy-pyside-scroll-enum-144-fix"
+      },
+      "head_sha": "98ea920a196b8e42efe429be89105ad9bf7d2037",
+      "pull_request": 144,
+      "regression": {
+        "files": 274,
+        "head_sha": "af3d88fd6e0ec2979198631eeb28ba097f3e17a1",
+        "path": "G:\\study\\Computer\\java\\EvoAgent\\output\\python-100-repo-benchmark-v1\\checkouts\\python-public-ephemeraldaddy-pyside-scroll-enum-144-regression"
+      },
+      "repository": "croweykid/ephemeraldaddy",
+      "validated_defect_line": true
+    },
+    {
+      "base_sha": "5b3e6e4714d3fe759cd47afdd99e7a90d0d16568",
+      "clean": {
+        "files": 5315,
+        "head_sha": "0db4af22e0f40a3f4849a26db3fdf257e4ff6604",
+        "path": "G:\\study\\Computer\\java\\EvoAgent\\output\\python-100-repo-benchmark-v1\\checkouts\\python-public-erpnext-none-bulk-args-56661-fix"
+      },
+      "head_sha": "0db4af22e0f40a3f4849a26db3fdf257e4ff6604",
+      "pull_request": 56661,
+      "regression": {
+        "files": 5315,
+        "head_sha": "5b3e6e4714d3fe759cd47afdd99e7a90d0d16568",
+        "path": "G:\\study\\Computer\\java\\EvoAgent\\output\\python-100-repo-benchmark-v1\\checkouts\\python-public-erpnext-none-bulk-args-56661-regression"
+      },
+      "repository": "frappe/erpnext",
+      "validated_defect_line": true
+    },
+    {
+      "base_sha": "4f00eb846534ffa824517b9598b16683982cad03",
+      "clean": {
+        "files": 3686,
+        "head_sha": "d9f53ad010e1c5eb34863c2cbcc6cab9a114e02e",
+        "path": "G:\\study\\Computer\\java\\EvoAgent\\output\\python-100-repo-benchmark-v1\\checkouts\\python-public-press-none-roles-6862-fix"
+      },
+      "head_sha": "d9f53ad010e1c5eb34863c2cbcc6cab9a114e02e",
+      "pull_request": 6862,
+      "regression": {
+        "files": 3686,
+        "head_sha": "4f00eb846534ffa824517b9598b16683982cad03",
+        "path": "G:\\study\\Computer\\java\\EvoAgent\\output\\python-100-repo-benchmark-v1\\checkouts\\python-public-press-none-roles-6862-regression"
+      },
+      "repository": "frappe/press",
+      "validated_defect_line": true
+    },
+    {
+      "base_sha": "d84ef33d4eed2b9f39bc3b16c639104a5721646a",
+      "clean": {
+        "files": 116,
+        "head_sha": "c6b1211ec1c1228b63d35a212061eed6f6658bf8",
+        "path": "G:\\study\\Computer\\java\\EvoAgent\\output\\python-100-repo-benchmark-v1\\checkouts\\python-public-modorganizer-dict-choice-index-1027-fix"
+      },
+      "head_sha": "c6b1211ec1c1228b63d35a212061eed6f6658bf8",
+      "pull_request": 1027,
+      "regression": {
+        "files": 116,
+        "head_sha": "d84ef33d4eed2b9f39bc3b16c639104a5721646a",
+        "path": "G:\\study\\Computer\\java\\EvoAgent\\output\\python-100-repo-benchmark-v1\\checkouts\\python-public-modorganizer-dict-choice-index-1027-regression"
+      },
+      "repository": "Furglitch/modorganizer2-linux-installer",
+      "validated_defect_line": true
+    },
+    {
+      "base_sha": "aec7da817b59940fce552caa4761fcdfe89aa863",
+      "clean": {
+        "files": 362,
+        "head_sha": "60db0c71db31928a87a141c6a9bd7f046b3bbe75",
+        "path": "G:\\study\\Computer\\java\\EvoAgent\\output\\python-100-repo-benchmark-v1\\checkouts\\python-public-psi-agent-missing-file-field-137-fix"
+      },
+      "head_sha": "60db0c71db31928a87a141c6a9bd7f046b3bbe75",
+      "pull_request": 137,
+      "regression": {
+        "files": 362,
+        "head_sha": "aec7da817b59940fce552caa4761fcdfe89aa863",
+        "path": "G:\\study\\Computer\\java\\EvoAgent\\output\\python-100-repo-benchmark-v1\\checkouts\\python-public-psi-agent-missing-file-field-137-regression"
+      },
+      "repository": "genuineknowledge/psi-agent",
+      "validated_defect_line": true
+    },
+    {
+      "base_sha": "2caa324f659e56eb52e5097a046cdfcdbe62c85b",
+      "clean": {
+        "files": 503,
+        "head_sha": "451fdbde39d27c30c314b3a89fabc62ebf9c2798",
+        "path": "G:\\study\\Computer\\java\\EvoAgent\\output\\python-100-repo-benchmark-v1\\checkouts\\python-public-token-optimizer-none-store-6-fix"
+      },
+      "head_sha": "451fdbde39d27c30c314b3a89fabc62ebf9c2798",
+      "pull_request": 6,
+      "regression": {
+        "files": 503,
+        "head_sha": "2caa324f659e56eb52e5097a046cdfcdbe62c85b",
+        "path": "G:\\study\\Computer\\java\\EvoAgent\\output\\python-100-repo-benchmark-v1\\checkouts\\python-public-token-optimizer-none-store-6-regression"
+      },
+      "repository": "glupta/token-optimizer",
+      "validated_defect_line": true
+    },
+    {
+      "base_sha": "4f51fd7a5bbc5e941be434b3d734b8c38cb8c101",
+      "clean": {
+        "files": 50,
+        "head_sha": "0114429e715d18a181b28e9262dfc4da02530fe5",
+        "path": "G:\\study\\Computer\\java\\EvoAgent\\output\\python-100-repo-benchmark-v1\\checkouts\\python-public-godon-single-column-row-142-fix"
+      },
+      "head_sha": "0114429e715d18a181b28e9262dfc4da02530fe5",
+      "pull_request": 142,
+      "regression": {
+        "files": 50,
+        "head_sha": "4f51fd7a5bbc5e941be434b3d734b8c38cb8c101",
+        "path": "G:\\study\\Computer\\java\\EvoAgent\\output\\python-100-repo-benchmark-v1\\checkouts\\python-public-godon-single-column-row-142-regression"
+      },
+      "repository": "godon-dev/godon-breeders",
+      "validated_defect_line": true
+    },
+    {
+      "base_sha": "6c6b986a2aecba668322283e3ea14467dc7f0fe1",
+      "clean": {
+        "files": 880,
+        "head_sha": "81966430c876ef72d07880743e279c80aaf54225",
+        "path": "G:\\study\\Computer\\java\\EvoAgent\\output\\python-100-repo-benchmark-v1\\checkouts\\python-public-cv-studio-malformed-link-alias-759-fix"
+      },
+      "head_sha": "81966430c876ef72d07880743e279c80aaf54225",
+      "pull_request": 759,
+      "regression": {
+        "files": 880,
+        "head_sha": "6c6b986a2aecba668322283e3ea14467dc7f0fe1",
+        "path": "G:\\study\\Computer\\java\\EvoAgent\\output\\python-100-repo-benchmark-v1\\checkouts\\python-public-cv-studio-malformed-link-alias-759-regression"
+      },
+      "repository": "hackolite/CV_Studio",
+      "validated_defect_line": true
+    },
+    {
+      "base_sha": "a79130293fb5fc0094bc3a42eb9a3007c015969e",
+      "clean": {
+        "files": 52,
+        "head_sha": "82f68e043f6e98e4889f00dbb452f319bf7d80a8",
+        "path": "G:\\study\\Computer\\java\\EvoAgent\\output\\python-100-repo-benchmark-v1\\checkouts\\python-public-soccer-empty-control-history-10-fix"
+      },
+      "head_sha": "82f68e043f6e98e4889f00dbb452f319bf7d80a8",
+      "pull_request": 10,
+      "regression": {
+        "files": 52,
+        "head_sha": "a79130293fb5fc0094bc3a42eb9a3007c015969e",
+        "path": "G:\\study\\Computer\\java\\EvoAgent\\output\\python-100-repo-benchmark-v1\\checkouts\\python-public-soccer-empty-control-history-10-regression"
+      },
+      "repository": "hackolite/SoccerAnalytics",
+      "validated_defect_line": true
+    },
+    {
+      "base_sha": "0339c9c1a1f39b134352bd993e3f9cbe8760afc1",
+      "clean": {
+        "files": 669,
+        "head_sha": "d6a85130ef46a959ac98cc838440f1cec6b22dda",
+        "path": "G:\\study\\Computer\\java\\EvoAgent\\output\\python-100-repo-benchmark-v1\\checkouts\\python-public-omlx-none-logits-processors-1747-fix"
+      },
+      "head_sha": "d6a85130ef46a959ac98cc838440f1cec6b22dda",
+      "pull_request": 1747,
+      "regression": {
+        "files": 669,
+        "head_sha": "0339c9c1a1f39b134352bd993e3f9cbe8760afc1",
+        "path": "G:\\study\\Computer\\java\\EvoAgent\\output\\python-100-repo-benchmark-v1\\checkouts\\python-public-omlx-none-logits-processors-1747-regression"
+      },
+      "repository": "jundot/omlx",
+      "validated_defect_line": true
+    },
+    {
+      "base_sha": "c35121b061288694528a25f605ccfe9f5832ab44",
+      "clean": {
+        "files": 164,
+        "head_sha": "e461fd48a149f8b8c80bba31bb4762be7496ccc8",
+        "path": "G:\\study\\Computer\\java\\EvoAgent\\output\\python-100-repo-benchmark-v1\\checkouts\\python-public-hexchess-wrong-outcome-field-91-fix"
+      },
+      "head_sha": "e461fd48a149f8b8c80bba31bb4762be7496ccc8",
+      "pull_request": 91,
+      "regression": {
+        "files": 164,
+        "head_sha": "c35121b061288694528a25f605ccfe9f5832ab44",
+        "path": "G:\\study\\Computer\\java\\EvoAgent\\output\\python-100-repo-benchmark-v1\\checkouts\\python-public-hexchess-wrong-outcome-field-91-regression"
+      },
+      "repository": "k15z/hexchess-zero",
+      "validated_defect_line": true
+    },
+    {
+      "base_sha": "68244f82e059e00b61f1a5462c1ebaa63a48531b",
+      "clean": {
+        "files": 892,
+        "head_sha": "902acd7b79a7dc648cff2c6c7ad1bea2a0df3837",
+        "path": "G:\\study\\Computer\\java\\EvoAgent\\output\\python-100-repo-benchmark-v1\\checkouts\\python-public-bobobobo-missing-send-id-4-fix"
+      },
+      "head_sha": "902acd7b79a7dc648cff2c6c7ad1bea2a0df3837",
+      "pull_request": 4,
+      "regression": {
+        "files": 892,
+        "head_sha": "68244f82e059e00b61f1a5462c1ebaa63a48531b",
+        "path": "G:\\study\\Computer\\java\\EvoAgent\\output\\python-100-repo-benchmark-v1\\checkouts\\python-public-bobobobo-missing-send-id-4-regression"
+      },
+      "repository": "kimbonnie91-hue/bobobobo",
+      "validated_defect_line": true
+    },
+    {
+      "base_sha": "9f5b29f3b4192d208f7c07a53f4e463cdb4951a9",
+      "clean": {
+        "files": 165,
+        "head_sha": "343efba893b1e903062f5ad9cc7a8a850e193bb0",
+        "path": "G:\\study\\Computer\\java\\EvoAgent\\output\\python-100-repo-benchmark-v1\\checkouts\\python-public-vecmocon-date-string-subtraction-13-fix"
+      },
+      "head_sha": "343efba893b1e903062f5ad9cc7a8a850e193bb0",
+      "pull_request": 13,
+      "regression": {
+        "files": 165,
+        "head_sha": "9f5b29f3b4192d208f7c07a53f4e463cdb4951a9",
+        "path": "G:\\study\\Computer\\java\\EvoAgent\\output\\python-100-repo-benchmark-v1\\checkouts\\python-public-vecmocon-date-string-subtraction-13-regression"
+      },
+      "repository": "mi-cloud-tech/vecmocon_customization",
+      "validated_defect_line": true
+    },
+    {
+      "base_sha": "f41561a1ba23dcc99dcb1875d6257aff62fd24d6",
+      "clean": {
+        "files": 317,
+        "head_sha": "50ac3585624f3d9770f3755146a1f621855106d6",
+        "path": "G:\\study\\Computer\\java\\EvoAgent\\output\\python-100-repo-benchmark-v1\\checkouts\\python-public-hezo-null-html-name-254-fix"
+      },
+      "head_sha": "50ac3585624f3d9770f3755146a1f621855106d6",
+      "pull_request": 254,
+      "regression": {
+        "files": 317,
+        "head_sha": "f41561a1ba23dcc99dcb1875d6257aff62fd24d6",
+        "path": "G:\\study\\Computer\\java\\EvoAgent\\output\\python-100-repo-benchmark-v1\\checkouts\\python-public-hezo-null-html-name-254-regression"
+      },
+      "repository": "MIJUNG-HEZO/HEZO-Agent",
+      "validated_defect_line": true
+    },
+    {
+      "base_sha": "c625836409236ee0da8b0eaa7810aa3f73a15cf8",
+      "clean": {
+        "files": 20,
+        "head_sha": "4bc8eb65a21c224c87647a4aa36f59f8de65c318",
+        "path": "G:\\study\\Computer\\java\\EvoAgent\\output\\python-100-repo-benchmark-v1\\checkouts\\python-public-glasshouse-query-parameter-count-2-fix"
+      },
+      "head_sha": "4bc8eb65a21c224c87647a4aa36f59f8de65c318",
+      "pull_request": 2,
+      "regression": {
+        "files": 20,
+        "head_sha": "c625836409236ee0da8b0eaa7810aa3f73a15cf8",
+        "path": "G:\\study\\Computer\\java\\EvoAgent\\output\\python-100-repo-benchmark-v1\\checkouts\\python-public-glasshouse-query-parameter-count-2-regression"
+      },
+      "repository": "MitchelTurner/Glasshouse",
+      "validated_defect_line": true
+    },
+    {
+      "base_sha": "8e2d9326386fe81f53527f9b4a4f97ed84b4ffc8",
+      "clean": {
+        "files": 187,
+        "head_sha": "3de1c16129f35a7d477a9f9e077da8542e52bd81",
+        "path": "G:\\study\\Computer\\java\\EvoAgent\\output\\python-100-repo-benchmark-v1\\checkouts\\python-public-mnemo-none-topic-suggestion-879-fix"
+      },
+      "head_sha": "3de1c16129f35a7d477a9f9e077da8542e52bd81",
+      "pull_request": 879,
+      "regression": {
+        "files": 187,
+        "head_sha": "8e2d9326386fe81f53527f9b4a4f97ed84b4ffc8",
+        "path": "G:\\study\\Computer\\java\\EvoAgent\\output\\python-100-repo-benchmark-v1\\checkouts\\python-public-mnemo-none-topic-suggestion-879-regression"
+      },
+      "repository": "n24q02m/mnemo-mcp",
+      "validated_defect_line": true
+    },
+    {
+      "base_sha": "1e31d0882eaaa1513dd5fb0116f43dc5b4d4bf23",
+      "clean": {
+        "files": 34,
+        "head_sha": "9c7f15390760b8ecd57511fcd7821f960028ab92",
+        "path": "G:\\study\\Computer\\java\\EvoAgent\\output\\python-100-repo-benchmark-v1\\checkouts\\python-public-ps2-none-sys-argv-18-fix"
+      },
+      "head_sha": "9c7f15390760b8ecd57511fcd7821f960028ab92",
+      "pull_request": 18,
+      "regression": {
+        "files": 34,
+        "head_sha": "1e31d0882eaaa1513dd5fb0116f43dc5b4d4bf23",
+        "path": "G:\\study\\Computer\\java\\EvoAgent\\output\\python-100-repo-benchmark-v1\\checkouts\\python-public-ps2-none-sys-argv-18-regression"
+      },
+      "repository": "NathanNeurotic/PS2-Servers",
+      "validated_defect_line": true
+    },
+    {
+      "base_sha": "8b68310eee4d1256ab608129bb24b078dd7a4fc4",
+      "clean": {
+        "files": 820,
+        "head_sha": "1349e037782aa03cf0375757ccf3dda19de14de2",
+        "path": "G:\\study\\Computer\\java\\EvoAgent\\output\\python-100-repo-benchmark-v1\\checkouts\\python-public-skyrl-mamba-missing-mlp-1608-fix"
+      },
+      "head_sha": "1349e037782aa03cf0375757ccf3dda19de14de2",
+      "pull_request": 1608,
+      "regression": {
+        "files": 820,
+        "head_sha": "8b68310eee4d1256ab608129bb24b078dd7a4fc4",
+        "path": "G:\\study\\Computer\\java\\EvoAgent\\output\\python-100-repo-benchmark-v1\\checkouts\\python-public-skyrl-mamba-missing-mlp-1608-regression"
+      },
+      "repository": "NovaSky-AI/SkyRL",
+      "validated_defect_line": true
+    },
+    {
+      "base_sha": "8b2bd1d6eb352e72b2b4c11318655ba36d071fda",
+      "clean": {
+        "files": 296,
+        "head_sha": "72e92fa5b12903e060eb3fd836dcca1c4eeda918",
+        "path": "G:\\study\\Computer\\java\\EvoAgent\\output\\python-100-repo-benchmark-v1\\checkouts\\python-public-sonar-missing-period-2401-fix"
+      },
+      "head_sha": "72e92fa5b12903e060eb3fd836dcca1c4eeda918",
+      "pull_request": 2401,
+      "regression": {
+        "files": 296,
+        "head_sha": "8b2bd1d6eb352e72b2b4c11318655ba36d071fda",
+        "path": "G:\\study\\Computer\\java\\EvoAgent\\output\\python-100-repo-benchmark-v1\\checkouts\\python-public-sonar-missing-period-2401-regression"
+      },
+      "repository": "okorach/sonar-tools",
+      "validated_defect_line": true
+    },
+    {
+      "base_sha": "260d08132dc484641ef61c67dac0cd242da42d4a",
+      "clean": {
+        "files": 701,
+        "head_sha": "2aa039b37ea2a1760119f6a1204c6b028e58ce5a",
+        "path": "G:\\study\\Computer\\java\\EvoAgent\\output\\python-100-repo-benchmark-v1\\checkouts\\python-public-oxo-empty-version-965-fix"
+      },
+      "head_sha": "2aa039b37ea2a1760119f6a1204c6b028e58ce5a",
+      "pull_request": 965,
+      "regression": {
+        "files": 701,
+        "head_sha": "260d08132dc484641ef61c67dac0cd242da42d4a",
+        "path": "G:\\study\\Computer\\java\\EvoAgent\\output\\python-100-repo-benchmark-v1\\checkouts\\python-public-oxo-empty-version-965-regression"
+      },
+      "repository": "Ostorlab/oxo",
+      "validated_defect_line": true
+    },
+    {
+      "base_sha": "531681289554e0430c375c6b78805c7842db2ed7",
+      "clean": {
+        "files": 47,
+        "head_sha": "c98b88845424513547bfa59458d45fbaf1af1b3d",
+        "path": "G:\\study\\Computer\\java\\EvoAgent\\output\\python-100-repo-benchmark-v1\\checkouts\\python-public-pdls-modify-menu-actions-4-fix"
+      },
+      "head_sha": "c98b88845424513547bfa59458d45fbaf1af1b3d",
+      "pull_request": 4,
+      "regression": {
+        "files": 45,
+        "head_sha": "531681289554e0430c375c6b78805c7842db2ed7",
+        "path": "G:\\study\\Computer\\java\\EvoAgent\\output\\python-100-repo-benchmark-v1\\checkouts\\python-public-pdls-modify-menu-actions-4-regression"
+      },
+      "repository": "pirlouix-dev/PDLS",
+      "validated_defect_line": true
+    },
+    {
+      "base_sha": "5bf33e1633d1d19a0e7ef98f11fd02ad6dc22b3e",
+      "clean": {
+        "files": 467,
+        "head_sha": "35be1f3da49051d410ff627f83dc429b71d509d3",
+        "path": "G:\\study\\Computer\\java\\EvoAgent\\output\\python-100-repo-benchmark-v1\\checkouts\\python-public-bluebird-none-route-103-fix"
+      },
+      "head_sha": "35be1f3da49051d410ff627f83dc429b71d509d3",
+      "pull_request": 103,
+      "regression": {
+        "files": 467,
+        "head_sha": "5bf33e1633d1d19a0e7ef98f11fd02ad6dc22b3e",
+        "path": "G:\\study\\Computer\\java\\EvoAgent\\output\\python-100-repo-benchmark-v1\\checkouts\\python-public-bluebird-none-route-103-regression"
+      },
+      "repository": "project-bluebird/BluebirdATC",
+      "validated_defect_line": true
+    },
+    {
+      "base_sha": "448f8980ccb066a1d37f7f97fe1355106f64767f",
+      "clean": {
+        "files": 324,
+        "head_sha": "056a1e9d4c3604c40bcb474b2430a1b245ceee3b",
+        "path": "G:\\study\\Computer\\java\\EvoAgent\\output\\python-100-repo-benchmark-v1\\checkouts\\python-public-fabrica-empty-static-interrupt-99-fix"
+      },
+      "head_sha": "056a1e9d4c3604c40bcb474b2430a1b245ceee3b",
+      "pull_request": 99,
+      "regression": {
+        "files": 323,
+        "head_sha": "448f8980ccb066a1d37f7f97fe1355106f64767f",
+        "path": "G:\\study\\Computer\\java\\EvoAgent\\output\\python-100-repo-benchmark-v1\\checkouts\\python-public-fabrica-empty-static-interrupt-99-regression"
+      },
+      "repository": "Romeromarcov/fabrica-software",
+      "validated_defect_line": true
+    },
+    {
+      "base_sha": "947927bdb55ae45469be7ea0e44541a940c78ec3",
+      "clean": {
+        "files": 3711,
+        "head_sha": "5e742d7e40890367cfde08e200da44d291d17079",
+        "path": "G:\\study\\Computer\\java\\EvoAgent\\output\\python-100-repo-benchmark-v1\\checkouts\\python-public-sglang-flatten-hidden-scale-18500-fix"
+      },
+      "head_sha": "5e742d7e40890367cfde08e200da44d291d17079",
+      "pull_request": 18500,
+      "regression": {
+        "files": 3711,
+        "head_sha": "947927bdb55ae45469be7ea0e44541a940c78ec3",
+        "path": "G:\\study\\Computer\\java\\EvoAgent\\output\\python-100-repo-benchmark-v1\\checkouts\\python-public-sglang-flatten-hidden-scale-18500-regression"
+      },
+      "repository": "sgl-project/sglang",
+      "validated_defect_line": true
+    },
+    {
+      "base_sha": "1cc44f43c5eb0a67e5ee6f547a520a76cf494006",
+      "clean": {
+        "files": 8,
+        "head_sha": "6b50260edf3e7dfe422e68128def79278de0a85f",
+        "path": "G:\\study\\Computer\\java\\EvoAgent\\output\\python-100-repo-benchmark-v1\\checkouts\\python-public-reimubot-missing-colon-4-fix"
+      },
+      "head_sha": "6b50260edf3e7dfe422e68128def79278de0a85f",
+      "pull_request": 4,
+      "regression": {
+        "files": 7,
+        "head_sha": "1cc44f43c5eb0a67e5ee6f547a520a76cf494006",
+        "path": "G:\\study\\Computer\\java\\EvoAgent\\output\\python-100-repo-benchmark-v1\\checkouts\\python-public-reimubot-missing-colon-4-regression"
+      },
+      "repository": "Shiroko253/Reimubot",
+      "validated_defect_line": true
+    },
+    {
+      "base_sha": "c4d403795306b05ada0ed2986e27601a657a4561",
+      "clean": {
+        "files": 2082,
+        "head_sha": "1d48e51c427aba201214c99b1ad973a716e9bd94",
+        "path": "G:\\study\\Computer\\java\\EvoAgent\\output\\python-100-repo-benchmark-v1\\checkouts\\python-public-nakama-wrong-calendar-event-field-902-fix"
+      },
+      "head_sha": "1d48e51c427aba201214c99b1ad973a716e9bd94",
+      "pull_request": 902,
+      "regression": {
+        "files": 2082,
+        "head_sha": "c4d403795306b05ada0ed2986e27601a657a4561",
+        "path": "G:\\study\\Computer\\java\\EvoAgent\\output\\python-100-repo-benchmark-v1\\checkouts\\python-public-nakama-wrong-calendar-event-field-902-regression"
+      },
+      "repository": "shosho-chang/nakama",
+      "validated_defect_line": true
+    },
+    {
+      "base_sha": "ae0eea0bae690113cb8f2746b0f93e4ad15ac081",
+      "clean": {
+        "files": 30,
+        "head_sha": "5e6043668fe324b48c4b41393e6ab82ea8d91865",
+        "path": "G:\\study\\Computer\\java\\EvoAgent\\output\\python-100-repo-benchmark-v1\\checkouts\\python-public-ai-chat-empty-stream-choices-1-fix"
+      },
+      "head_sha": "5e6043668fe324b48c4b41393e6ab82ea8d91865",
+      "pull_request": 1,
+      "regression": {
+        "files": 30,
+        "head_sha": "ae0eea0bae690113cb8f2746b0f93e4ad15ac081",
+        "path": "G:\\study\\Computer\\java\\EvoAgent\\output\\python-100-repo-benchmark-v1\\checkouts\\python-public-ai-chat-empty-stream-choices-1-regression"
+      },
+      "repository": "sinotca529/ai-chat-tui",
+      "validated_defect_line": true
+    },
+    {
+      "base_sha": "cd6105f23ea36146ecbc474908386743e26f2ce4",
+      "clean": {
+        "files": 131,
+        "head_sha": "68423579fd7ee5984383fdc8608bf566c9fc1e89",
+        "path": "G:\\study\\Computer\\java\\EvoAgent\\output\\python-100-repo-benchmark-v1\\checkouts\\python-public-stargazing-none-pollution-53-fix"
+      },
+      "head_sha": "68423579fd7ee5984383fdc8608bf566c9fc1e89",
+      "pull_request": 53,
+      "regression": {
+        "files": 131,
+        "head_sha": "cd6105f23ea36146ecbc474908386743e26f2ce4",
+        "path": "G:\\study\\Computer\\java\\EvoAgent\\output\\python-100-repo-benchmark-v1\\checkouts\\python-public-stargazing-none-pollution-53-regression"
+      },
+      "repository": "StarGazer1995/stargazing-place-finder",
+      "validated_defect_line": true
+    },
+    {
+      "base_sha": "f8dbfc4521361f10cfbac8522468dff153da2e8a",
+      "clean": {
+        "files": 46,
+        "head_sha": "0c547224a0cc66ced718f4f948c81cbb22430786",
+        "path": "G:\\study\\Computer\\java\\EvoAgent\\output\\python-100-repo-benchmark-v1\\checkouts\\python-public-aws-audit-none-waf-error-15-fix"
+      },
+      "head_sha": "0c547224a0cc66ced718f4f948c81cbb22430786",
+      "pull_request": 15,
+      "regression": {
+        "files": 46,
+        "head_sha": "f8dbfc4521361f10cfbac8522468dff153da2e8a",
+        "path": "G:\\study\\Computer\\java\\EvoAgent\\output\\python-100-repo-benchmark-v1\\checkouts\\python-public-aws-audit-none-waf-error-15-regression"
+      },
+      "repository": "steveyminecraft/aws-account-audit",
+      "validated_defect_line": true
+    },
+    {
+      "base_sha": "0a4dfc56b16df93e94f66d7f4248f02dd58c45f9",
+      "clean": {
+        "files": 96,
+        "head_sha": "4e94a8c332d23885b7210a0ddc69de61d740638f",
+        "path": "G:\\study\\Computer\\java\\EvoAgent\\output\\python-100-repo-benchmark-v1\\checkouts\\python-public-robots-sim-scalar-rgba-141-fix"
+      },
+      "head_sha": "4e94a8c332d23885b7210a0ddc69de61d740638f",
+      "pull_request": 141,
+      "regression": {
+        "files": 96,
+        "head_sha": "0a4dfc56b16df93e94f66d7f4248f02dd58c45f9",
+        "path": "G:\\study\\Computer\\java\\EvoAgent\\output\\python-100-repo-benchmark-v1\\checkouts\\python-public-robots-sim-scalar-rgba-141-regression"
+      },
+      "repository": "strands-labs/robots-sim",
+      "validated_defect_line": true
+    },
+    {
+      "base_sha": "432240b9ab7281b73eabe504474eb93de55009b8",
+      "clean": {
+        "files": 261,
+        "head_sha": "47685216d60ac0aaa9c590e1e2dc8a2ce4536ede",
+        "path": "G:\\study\\Computer\\java\\EvoAgent\\output\\python-100-repo-benchmark-v1\\checkouts\\python-public-librarian-none-document-text-48-fix"
+      },
+      "head_sha": "47685216d60ac0aaa9c590e1e2dc8a2ce4536ede",
+      "pull_request": 48,
+      "regression": {
+        "files": 261,
+        "head_sha": "432240b9ab7281b73eabe504474eb93de55009b8",
+        "path": "G:\\study\\Computer\\java\\EvoAgent\\output\\python-100-repo-benchmark-v1\\checkouts\\python-public-librarian-none-document-text-48-regression"
+      },
+      "repository": "tamzrod/Librarian",
+      "validated_defect_line": true
+    },
+    {
+      "base_sha": "e689f8b27c3389bec85a4ca573e6143c9242fc42",
+      "clean": {
+        "files": 115,
+        "head_sha": "c125c6f88d79faca70b32ae7c77bcb813badd2e8",
+        "path": "G:\\study\\Computer\\java\\EvoAgent\\output\\python-100-repo-benchmark-v1\\checkouts\\python-public-samsungtv-missing-options-107-fix"
+      },
+      "head_sha": "c125c6f88d79faca70b32ae7c77bcb813badd2e8",
+      "pull_request": 107,
+      "regression": {
+        "files": 115,
+        "head_sha": "e689f8b27c3389bec85a4ca573e6143c9242fc42",
+        "path": "G:\\study\\Computer\\java\\EvoAgent\\output\\python-100-repo-benchmark-v1\\checkouts\\python-public-samsungtv-missing-options-107-regression"
+      },
+      "repository": "TheFab21/ha-samsungtv-smart",
+      "validated_defect_line": true
+    },
+    {
+      "base_sha": "14bd0ecf856e4c9eb708b9d6c9efc654e01f148d",
+      "clean": {
+        "files": 193,
+        "head_sha": "72bcb35e5821adb24ef2ed16e66c528111ad349b",
+        "path": "G:\\study\\Computer\\java\\EvoAgent\\output\\python-100-repo-benchmark-v1\\checkouts\\python-public-vt-py-datetime-utc-compat-213-fix"
+      },
+      "head_sha": "72bcb35e5821adb24ef2ed16e66c528111ad349b",
+      "pull_request": 213,
+      "regression": {
+        "files": 193,
+        "head_sha": "14bd0ecf856e4c9eb708b9d6c9efc654e01f148d",
+        "path": "G:\\study\\Computer\\java\\EvoAgent\\output\\python-100-repo-benchmark-v1\\checkouts\\python-public-vt-py-datetime-utc-compat-213-regression"
+      },
+      "repository": "VirusTotal/vt-py",
+      "validated_defect_line": true
+    },
+    {
+      "base_sha": "b293e341cb9ab36eeb6721af7de988ceb6cded69",
+      "clean": {
+        "files": 245,
+        "head_sha": "56bffb7e13f60c52f8afe876e8995c17ad6d5e14",
+        "path": "G:\\study\\Computer\\java\\EvoAgent\\output\\python-100-repo-benchmark-v1\\checkouts\\python-public-dashboard-null-email-79-fix"
+      },
+      "head_sha": "56bffb7e13f60c52f8afe876e8995c17ad6d5e14",
+      "pull_request": 79,
+      "regression": {
+        "files": 245,
+        "head_sha": "b293e341cb9ab36eeb6721af7de988ceb6cded69",
+        "path": "G:\\study\\Computer\\java\\EvoAgent\\output\\python-100-repo-benchmark-v1\\checkouts\\python-public-dashboard-null-email-79-regression"
+      },
+      "repository": "vllm-ascend/vllm_ascend_dashboard",
+      "validated_defect_line": true
+    },
+    {
+      "base_sha": "949d6b7b2a0281d8265bef5e1c95ddc682eb837f",
+      "clean": {
+        "files": 32,
+        "head_sha": "891d6035f0daca80689fc7bdada86ad17b3a71eb",
+        "path": "G:\\study\\Computer\\java\\EvoAgent\\output\\python-100-repo-benchmark-v1\\checkouts\\python-public-melony-optional-result-backend-18-fix"
+      },
+      "head_sha": "891d6035f0daca80689fc7bdada86ad17b3a71eb",
+      "pull_request": 18,
+      "regression": {
+        "files": 30,
+        "head_sha": "949d6b7b2a0281d8265bef5e1c95ddc682eb837f",
+        "path": "G:\\study\\Computer\\java\\EvoAgent\\output\\python-100-repo-benchmark-v1\\checkouts\\python-public-melony-optional-result-backend-18-regression"
+      },
+      "repository": "wimble3/melony",
+      "validated_defect_line": true
+    },
+    {
+      "base_sha": "6a9c7a2b52655bacfa7ab2da24fd0d14a6fff495",
+      "clean": {
+        "files": 1201,
+        "head_sha": "12d83ee8f7cc313caf619c580d0f978849150dd5",
+        "path": "G:\\study\\Computer\\java\\EvoAgent\\output\\python-100-repo-benchmark-v1\\checkouts\\python-public-yt-dlp-empty-facebook-entries-8681-fix"
+      },
+      "head_sha": "12d83ee8f7cc313caf619c580d0f978849150dd5",
+      "pull_request": 8681,
+      "regression": {
+        "files": 1201,
+        "head_sha": "6a9c7a2b52655bacfa7ab2da24fd0d14a6fff495",
+        "path": "G:\\study\\Computer\\java\\EvoAgent\\output\\python-100-repo-benchmark-v1\\checkouts\\python-public-yt-dlp-empty-facebook-entries-8681-regression"
+      },
+      "repository": "yt-dlp/yt-dlp",
+      "validated_defect_line": true
+    },
+    {
+      "base_sha": "b06b2e53a02726e0733af775f8b8de4930d95933",
+      "clean": {
+        "files": 1462,
+        "head_sha": "8eb9967bfd12a0bfd518d391a7dc37b01897d804",
+        "path": "G:\\study\\Computer\\java\\EvoAgent\\output\\python-100-repo-benchmark-v1\\checkouts\\python-public-lenie-short-https-prefix-112-fix"
+      },
+      "head_sha": "8eb9967bfd12a0bfd518d391a7dc37b01897d804",
+      "pull_request": 112,
+      "regression": {
+        "files": 1462,
+        "head_sha": "b06b2e53a02726e0733af775f8b8de4930d95933",
+        "path": "G:\\study\\Computer\\java\\EvoAgent\\output\\python-100-repo-benchmark-v1\\checkouts\\python-public-lenie-short-https-prefix-112-regression"
+      },
+      "repository": "ziutus/ai_assistant_lenie",
+      "validated_defect_line": true
+    }
+  ],
+  "failures": [],
+  "lfs_payloads_materialized": false,
+  "metadata_sha256": "a74dfafad6440d1acfee62a1be9582c94b938ca044760cbf7054a667ea9eecf3",
+  "repositories": 50,
+  "schema_version": 1,
+  "status": "complete",
+  "third_party_code_executed": false,
+  "worktrees": 100
+}

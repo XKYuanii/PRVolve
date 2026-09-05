@@ -1,0 +1,1716 @@
+{
+  "cases": 200,
+  "clean_fixes": 100,
+  "frozen_system_commit": "a0e1760",
+  "inventory": "G:\\study\\Computer\\java\\EvoAgent\\output\\python-50-repo-canary-v1\\candidate-inventory-v2.json",
+  "inventory_sha256": "2a8be7d11038b9e45c8b9eebc63722d5ebf94ed5fd4e4e7e646773d52e80122e",
+  "name": "python-100-repo-benchmark-v1",
+  "new_cases": 100,
+  "new_repositories": 50,
+  "pool_projection": [
+    {
+      "pull_request": 18,
+      "rank": 1,
+      "repository": "wimble3/melony",
+      "tier": 1
+    },
+    {
+      "pull_request": 562,
+      "rank": 2,
+      "repository": "cherrytea-dev/la_searcher_bot",
+      "tier": 1
+    },
+    {
+      "pull_request": 213,
+      "rank": 3,
+      "repository": "VirusTotal/vt-py",
+      "tier": 1
+    },
+    {
+      "pull_request": 947,
+      "rank": 4,
+      "repository": "ansible/ansible-ai-connect-service",
+      "tier": 1
+    },
+    {
+      "pull_request": 11,
+      "rank": 5,
+      "repository": "AlainSainteCroix/auto-re-agent",
+      "tier": 1
+    },
+    {
+      "pull_request": 137,
+      "rank": 6,
+      "repository": "genuineknowledge/psi-agent",
+      "tier": 1
+    },
+    {
+      "pull_request": 6862,
+      "rank": 7,
+      "repository": "frappe/press",
+      "tier": 1
+    },
+    {
+      "pull_request": 965,
+      "rank": 8,
+      "repository": "Ostorlab/oxo",
+      "tier": 1
+    },
+    {
+      "pull_request": 4,
+      "rank": 9,
+      "repository": "pirlouix-dev/PDLS",
+      "tier": 1
+    },
+    {
+      "pull_request": 7,
+      "rank": 10,
+      "repository": "joewpb/legalclear",
+      "tier": 1
+    },
+    {
+      "pull_request": 567,
+      "rank": 11,
+      "repository": "wasserth/TotalSegmentator",
+      "tier": 1
+    },
+    {
+      "pull_request": 11,
+      "rank": 12,
+      "repository": "mikosavolainen/sondehub-alert-v2",
+      "tier": 1
+    },
+    {
+      "pull_request": 91,
+      "rank": 13,
+      "repository": "k15z/hexchess-zero",
+      "tier": 1
+    },
+    {
+      "pull_request": 40,
+      "rank": 14,
+      "repository": "AuroraQuen/MCP",
+      "tier": 1
+    },
+    {
+      "pull_request": 8681,
+      "rank": 15,
+      "repository": "yt-dlp/yt-dlp",
+      "tier": 1
+    },
+    {
+      "pull_request": 29,
+      "rank": 16,
+      "repository": "benevpi/conhamriver",
+      "tier": 1
+    },
+    {
+      "pull_request": 7,
+      "rank": 17,
+      "repository": "cormoran/zmk-west-commands",
+      "tier": 1
+    },
+    {
+      "pull_request": 3072,
+      "rank": 18,
+      "repository": "pylint-dev/astroid",
+      "tier": 1
+    },
+    {
+      "pull_request": 1747,
+      "rank": 19,
+      "repository": "jundot/omlx",
+      "tier": 1
+    },
+    {
+      "pull_request": 521,
+      "rank": 20,
+      "repository": "ubclaunchpad/rocket2",
+      "tier": 1
+    },
+    {
+      "pull_request": 2401,
+      "rank": 21,
+      "repository": "okorach/sonar-tools",
+      "tier": 1
+    },
+    {
+      "pull_request": 5,
+      "rank": 22,
+      "repository": "danniesidequestmaxxing/geo-deal-sourcing",
+      "tier": 1
+    },
+    {
+      "pull_request": 400,
+      "rank": 23,
+      "repository": "mlcommons/storage",
+      "tier": 1
+    },
+    {
+      "pull_request": 103,
+      "rank": 24,
+      "repository": "project-bluebird/BluebirdATC",
+      "tier": 1
+    },
+    {
+      "pull_request": 33,
+      "rank": 25,
+      "repository": "ASAC-DE-bigkk/ASAC-DAG",
+      "tier": 1
+    },
+    {
+      "pull_request": 2,
+      "rank": 26,
+      "repository": "MitchelTurner/Glasshouse",
+      "tier": 1
+    },
+    {
+      "pull_request": 13,
+      "rank": 27,
+      "repository": "mi-cloud-tech/vecmocon_customization",
+      "tier": 1
+    },
+    {
+      "pull_request": 1027,
+      "rank": 28,
+      "repository": "Furglitch/modorganizer2-linux-installer",
+      "tier": 1
+    },
+    {
+      "pull_request": 1181,
+      "rank": 29,
+      "repository": "AcePeak/naturo",
+      "tier": 1
+    },
+    {
+      "pull_request": 499,
+      "rank": 30,
+      "repository": "veritasfuji-japan/veritas_os",
+      "tier": 1
+    },
+    {
+      "pull_request": 142,
+      "rank": 31,
+      "repository": "godon-dev/godon-breeders",
+      "tier": 1
+    },
+    {
+      "pull_request": 6,
+      "rank": 32,
+      "repository": "glupta/token-optimizer",
+      "tier": 1
+    },
+    {
+      "pull_request": 141,
+      "rank": 33,
+      "repository": "strands-labs/robots-sim",
+      "tier": 1
+    },
+    {
+      "pull_request": 15,
+      "rank": 34,
+      "repository": "steveyminecraft/aws-account-audit",
+      "tier": 1
+    },
+    {
+      "pull_request": 56661,
+      "rank": 35,
+      "repository": "frappe/erpnext",
+      "tier": 1
+    },
+    {
+      "pull_request": 14267,
+      "rank": 36,
+      "repository": "NVIDIA/TensorRT-LLM",
+      "tier": 1
+    },
+    {
+      "pull_request": 1641,
+      "rank": 37,
+      "repository": "atlassian-api/atlassian-python-api",
+      "tier": 1
+    },
+    {
+      "pull_request": 1608,
+      "rank": 38,
+      "repository": "NovaSky-AI/SkyRL",
+      "tier": 1
+    },
+    {
+      "pull_request": 79,
+      "rank": 39,
+      "repository": "vllm-ascend/vllm_ascend_dashboard",
+      "tier": 1
+    },
+    {
+      "pull_request": 53,
+      "rank": 40,
+      "repository": "StarGazer1995/stargazing-place-finder",
+      "tier": 1
+    },
+    {
+      "pull_request": 1381,
+      "rank": 41,
+      "repository": "abrignoni/iLEAPP",
+      "tier": 1
+    },
+    {
+      "pull_request": 18500,
+      "rank": 42,
+      "repository": "sgl-project/sglang",
+      "tier": 1
+    },
+    {
+      "pull_request": 4,
+      "rank": 43,
+      "repository": "Shiroko253/Reimubot",
+      "tier": 1
+    },
+    {
+      "pull_request": 879,
+      "rank": 44,
+      "repository": "n24q02m/mnemo-mcp",
+      "tier": 1
+    },
+    {
+      "pull_request": 3,
+      "rank": 45,
+      "repository": "akunnft-ux/auto-post-soal-matematika",
+      "tier": 1
+    },
+    {
+      "pull_request": 201,
+      "rank": 46,
+      "repository": "ArthurBernard/Fynance",
+      "tier": 1
+    },
+    {
+      "pull_request": 8,
+      "rank": 47,
+      "repository": "Bright0505/mcp-db",
+      "tier": 1
+    },
+    {
+      "pull_request": 51,
+      "rank": 48,
+      "repository": "DINA-community/DDDC-Netbox-plugin",
+      "tier": 1
+    },
+    {
+      "pull_request": 759,
+      "rank": 49,
+      "repository": "aiidalab/aiidalab-widgets-base",
+      "tier": 1
+    },
+    {
+      "pull_request": 57,
+      "rank": 50,
+      "repository": "candidelabs/voltaire",
+      "tier": 1
+    },
+    {
+      "pull_request": 157,
+      "rank": 51,
+      "repository": "Ostorlab/agent_whatweb",
+      "tier": 1
+    },
+    {
+      "pull_request": 2547,
+      "rank": 52,
+      "repository": "PyCQA/isort",
+      "tier": 1
+    },
+    {
+      "pull_request": 902,
+      "rank": 53,
+      "repository": "shosho-chang/nakama",
+      "tier": 1
+    },
+    {
+      "pull_request": 18,
+      "rank": 54,
+      "repository": "amami-cell/susabiyu-ig-auto",
+      "tier": 1
+    },
+    {
+      "pull_request": 4,
+      "rank": 55,
+      "repository": "kimbonnie91-hue/bobobobo",
+      "tier": 1
+    },
+    {
+      "pull_request": 373,
+      "rank": 56,
+      "repository": "fl4p/batmon-ha",
+      "tier": 1
+    },
+    {
+      "pull_request": 254,
+      "rank": 57,
+      "repository": "MIJUNG-HEZO/HEZO-Agent",
+      "tier": 1
+    },
+    {
+      "pull_request": 112,
+      "rank": 58,
+      "repository": "ziutus/ai_assistant_lenie",
+      "tier": 1
+    },
+    {
+      "pull_request": 299,
+      "rank": 59,
+      "repository": "pumpingstationone/deepharbor",
+      "tier": 1
+    },
+    {
+      "pull_request": 1,
+      "rank": 60,
+      "repository": "AlexandreCamerini/b3agente",
+      "tier": 1
+    },
+    {
+      "pull_request": 144,
+      "rank": 61,
+      "repository": "croweykid/ephemeraldaddy",
+      "tier": 1
+    },
+    {
+      "pull_request": 18,
+      "rank": 62,
+      "repository": "NathanNeurotic/PS2-Servers",
+      "tier": 1
+    },
+    {
+      "pull_request": 5,
+      "rank": 1,
+      "repository": "devsmish/movie_search_console_app",
+      "tier": 2
+    },
+    {
+      "pull_request": 51,
+      "rank": 2,
+      "repository": "freekos/cc-orchestrator",
+      "tier": 2
+    },
+    {
+      "pull_request": 107,
+      "rank": 3,
+      "repository": "TheFab21/ha-samsungtv-smart",
+      "tier": 2
+    },
+    {
+      "pull_request": 10,
+      "rank": 4,
+      "repository": "hackolite/SoccerAnalytics",
+      "tier": 2
+    },
+    {
+      "pull_request": 48,
+      "rank": 5,
+      "repository": "tamzrod/Librarian",
+      "tier": 2
+    },
+    {
+      "pull_request": 1,
+      "rank": 6,
+      "repository": "sinotca529/ai-chat-tui",
+      "tier": 2
+    },
+    {
+      "pull_request": 63,
+      "rank": 7,
+      "repository": "0bnoxide/AutoGIS",
+      "tier": 2
+    },
+    {
+      "pull_request": 103,
+      "rank": 8,
+      "repository": "Qixuan112/Tale-AI-legacy",
+      "tier": 2
+    },
+    {
+      "pull_request": 759,
+      "rank": 9,
+      "repository": "hackolite/CV_Studio",
+      "tier": 2
+    },
+    {
+      "pull_request": 75,
+      "rank": 10,
+      "repository": "QuantStrategyLab/BinancePlatform",
+      "tier": 2
+    },
+    {
+      "pull_request": 271,
+      "rank": 11,
+      "repository": "warlock20/StartWithA",
+      "tier": 2
+    },
+    {
+      "pull_request": 67,
+      "rank": 12,
+      "repository": "takkub/agent-takkub",
+      "tier": 2
+    },
+    {
+      "pull_request": 778,
+      "rank": 13,
+      "repository": "cohere-ai/cohere-python",
+      "tier": 2
+    },
+    {
+      "pull_request": 538,
+      "rank": 14,
+      "repository": "full-bars/spc-bot",
+      "tier": 2
+    },
+    {
+      "pull_request": 99,
+      "rank": 15,
+      "repository": "Romeromarcov/fabrica-software",
+      "tier": 2
+    }
+  ],
+  "pool_projection_sha256": "f23f33ce3bae250e8237212bf8f5427d0f302ff9c8460fb18da842ac44ce4790",
+  "portable_dataset": "G:\\study\\Computer\\java\\EvoAgent\\benchmarks\\python_100_repo_benchmark_v1.jsonl",
+  "portable_dataset_sha256": "a8102d5b52dc8fa85dfea5b049ff34b8c3d7ca9c3e1cc05e9dc516619b2bbb6a",
+  "pull_request_metadata": "G:\\study\\Computer\\java\\EvoAgent\\output\\python-100-repo-benchmark-v1\\pr-metadata.json",
+  "pull_requests": 100,
+  "regressions": 100,
+  "rejections": {
+    "ASAC-DE-bigkk/ASAC-DAG#33": "ambiguous-duplicate-causal-lines",
+    "ArthurBernard/Fynance#201": "multiple-independent-scoreable-defects",
+    "DINA-community/DDDC-Netbox-plugin#51": "fix-semantics-not-unambiguous",
+    "NVIDIA/TensorRT-LLM#14267": "ambiguous-duplicate-causal-lines",
+    "Ostorlab/agent_whatweb#157": "excluded-network-security-domain",
+    "abrignoni/iLEAPP#1381": "causal-risk-line-not-present-in-reversal",
+    "aiidalab/aiidalab-widgets-base#759": "causal-contract-not-local-enough",
+    "ansible/ansible-ai-connect-service#947": "causal-risk-line-not-unambiguous",
+    "cohere-ai/cohere-python#778": "add-only-guard-has-no-scoreable-regression-line",
+    "danniesidequestmaxxing/geo-deal-sourcing#5": "add-only-guard-has-no-scoreable-regression-line",
+    "fl4p/batmon-ha#373": "add-only-guard-has-no-scoreable-regression-line",
+    "joewpb/legalclear#7": "broad-exception-fix",
+    "mikosavolainen/sondehub-alert-v2#11": "multiple-independent-behavior-changes",
+    "mlcommons/storage#400": "reversal-adds-no-causal-risk-line",
+    "pumpingstationone/deepharbor#299": "multiple-independent-behavior-changes",
+    "pylint-dev/astroid#3072": "add-only-guard-has-no-scoreable-regression-line",
+    "ubclaunchpad/rocket2#521": "add-only-guard-has-no-scoreable-regression-line",
+    "veritasfuji-japan/veritas_os#499": "original-line-already-handles-null-client",
+    "wasserth/TotalSegmentator#567": "multiple-independent-production-fixes"
+  },
+  "repositories": 100,
+  "reused_cases": 100,
+  "reused_repositories": 50,
+  "runtime_dataset": "G:\\study\\Computer\\java\\EvoAgent\\output\\python-100-repo-benchmark-v1\\runtime-dataset.jsonl",
+  "runtime_dataset_sha256": "8796c31dab8d6fa16596ce1ea6e3a46eb992402a8d10f82f3e36852d255108c3",
+  "schema_version": 1,
+  "selected": [
+    {
+      "acceptable_cwes": [
+        "CWE-248",
+        "CWE-703"
+      ],
+      "audit_rank": 1,
+      "audit_tier": 1,
+      "clean_case_id": "python-public-melony-optional-result-backend-18-fix",
+      "cwe": "CWE-754",
+      "extra_paths": [],
+      "fix_diff_sha256": "825a8f408c4365d3a1eee1011e499f586b70047cea088650b113e0b927f20bba",
+      "has_python_regression_test": false,
+      "needle": "assert isinstance(result_backend_saver, IAsyncResultBackendSaver)",
+      "primary_path": "melony/core/consumers.py",
+      "public_url": "https://github.com/wimble3/melony/pull/18",
+      "pull_request": 18,
+      "repository": "wimble3/melony",
+      "risk_case_id": "python-public-melony-optional-result-backend-18-regression",
+      "severity": "medium",
+      "slug": "melony-optional-result-backend",
+      "summary": "An omitted async result backend is asserted as though it were a supplied backend.",
+      "title": "hotfix: wrong assertation errors for result backends at BaseSyncConsu…"
+    },
+    {
+      "acceptable_cwes": [
+        "CWE-20",
+        "CWE-703"
+      ],
+      "audit_rank": 2,
+      "audit_tier": 1,
+      "clean_case_id": "python-public-la-searcher-missing-reply-markup-562-fix",
+      "cwe": "CWE-248",
+      "extra_paths": [],
+      "fix_diff_sha256": "4d6c357a4a5529371e0fcb9aedd2e9def34163c1b9b2016f996d3fefbccc9318",
+      "has_python_regression_test": false,
+      "needle": "if isinstance(params['reply_markup'], ReplyKeyboardMarkup):",
+      "primary_path": "src/communicate/main.py",
+      "public_url": "https://github.com/cherrytea-dev/la_searcher_bot/pull/562",
+      "pull_request": 562,
+      "repository": "cherrytea-dev/la_searcher_bot",
+      "risk_case_id": "python-public-la-searcher-missing-reply-markup-562-regression",
+      "severity": "medium",
+      "slug": "la-searcher-missing-reply-markup",
+      "summary": "Messages without reply_markup are indexed directly and raise KeyError.",
+      "title": "fix: KeyError"
+    },
+    {
+      "acceptable_cwes": [
+        "CWE-703",
+        "CWE-754"
+      ],
+      "audit_rank": 3,
+      "audit_tier": 1,
+      "clean_case_id": "python-public-vt-py-datetime-utc-compat-213-fix",
+      "cwe": "CWE-248",
+      "extra_paths": [],
+      "fix_diff_sha256": "315977f190d49a2925a8747b73943d1e79b2415707f5e7f68960848a6d8fdeab",
+      "has_python_regression_test": true,
+      "needle": "datetime.datetime.fromtimestamp(value, datetime.UTC)",
+      "primary_path": "vt/object.py",
+      "public_url": "https://github.com/VirusTotal/vt-py/pull/213",
+      "pull_request": 213,
+      "repository": "VirusTotal/vt-py",
+      "risk_case_id": "python-public-vt-py-datetime-utc-compat-213-regression",
+      "severity": "medium",
+      "slug": "vt-py-datetime-utc-compat",
+      "summary": "Python versions without datetime.UTC raise AttributeError during timestamp conversion.",
+      "title": "fix: AttributeError"
+    },
+    {
+      "acceptable_cwes": [
+        "CWE-20",
+        "CWE-248",
+        "CWE-703"
+      ],
+      "audit_rank": 5,
+      "audit_tier": 1,
+      "clean_case_id": "python-public-auto-re-agent-empty-name-tokens-11-fix",
+      "cwe": "CWE-129",
+      "extra_paths": [],
+      "fix_diff_sha256": "e377c31200c261c402e298d167a06f0f8dc0ca40ad86e3366d90ffc81ff52469",
+      "has_python_regression_test": true,
+      "needle": "name = stripped.split(\"(\")[0].split()[-1] if \"(\" in stripped else target",
+      "primary_path": "src/re_agent/backend/ghidra_bridge.py",
+      "public_url": "https://github.com/AlainSainteCroix/auto-re-agent/pull/11",
+      "pull_request": 11,
+      "repository": "AlainSainteCroix/auto-re-agent",
+      "risk_case_id": "python-public-auto-re-agent-empty-name-tokens-11-regression",
+      "severity": "medium",
+      "slug": "auto-re-agent-empty-name-tokens",
+      "summary": "A decompiled signature beginning with a cast indexes an empty token list.",
+      "title": "fix(backend): plus d'IndexError quand le nom décompilé commence par un cast"
+    },
+    {
+      "acceptable_cwes": [
+        "CWE-20",
+        "CWE-703"
+      ],
+      "audit_rank": 6,
+      "audit_tier": 1,
+      "clean_case_id": "python-public-psi-agent-missing-file-field-137-fix",
+      "cwe": "CWE-248",
+      "extra_paths": [],
+      "fix_diff_sha256": "9ce9fe210a4a86e7de2e796db34b8cbd984507c95afe079cf75280afa3b7c509",
+      "has_python_regression_test": false,
+      "needle": "for file_field in data.getall(\"file\"):",
+      "primary_path": "src/psi_agent/gateway/server.py",
+      "public_url": "https://github.com/genuineknowledge/psi-agent/pull/137",
+      "pull_request": 137,
+      "repository": "genuineknowledge/psi-agent",
+      "risk_case_id": "python-public-psi-agent-missing-file-field-137-regression",
+      "severity": "medium",
+      "slug": "psi-agent-missing-file-field",
+      "summary": "A multipart request without a file field raises instead of yielding an empty list.",
+      "title": "fix(gateway): avoid KeyError when multipart POST has no file field"
+    },
+    {
+      "acceptable_cwes": [
+        "CWE-20",
+        "CWE-248",
+        "CWE-703"
+      ],
+      "audit_rank": 7,
+      "audit_tier": 1,
+      "clean_case_id": "python-public-press-none-roles-6862-fix",
+      "cwe": "CWE-476",
+      "extra_paths": [],
+      "fix_diff_sha256": "bf7cdd0bc20d2d6d021a66fee1bbc9fdc0dfa4dc71fce0f671c9ebb4e325feeb",
+      "has_python_regression_test": false,
+      "needle": "for role in roles:",
+      "primary_path": "press/press/doctype/team/team.py",
+      "public_url": "https://github.com/frappe/press/pull/6862",
+      "pull_request": 6862,
+      "repository": "frappe/press",
+      "risk_case_id": "python-public-press-none-roles-6862-regression",
+      "severity": "medium",
+      "slug": "press-none-roles",
+      "summary": "A missing roles collection is iterated and raises TypeError.",
+      "title": "fix(team): Handle when passed role is none"
+    },
+    {
+      "acceptable_cwes": [
+        "CWE-20",
+        "CWE-440",
+        "CWE-670",
+        "CWE-754"
+      ],
+      "audit_rank": 8,
+      "audit_tier": 1,
+      "clean_case_id": "python-public-oxo-empty-version-965-fix",
+      "cwe": "CWE-682",
+      "extra_paths": [],
+      "fix_diff_sha256": "64266c304744793bfed82ff367ceba2e373b9fa077704efe0a46647b96c88e06",
+      "has_python_regression_test": false,
+      "needle": "if t_name == image and version is None:",
+      "primary_path": "src/ostorlab/cli/agent_fetcher.py",
+      "public_url": "https://github.com/Ostorlab/oxo/pull/965",
+      "pull_request": 965,
+      "repository": "Ostorlab/oxo",
+      "risk_case_id": "python-public-oxo-empty-version-965-regression",
+      "severity": "medium",
+      "slug": "oxo-empty-version",
+      "summary": "An empty version is not treated as an unspecified version, so an available image is missed.",
+      "title": "fix: Handle case empty version."
+    },
+    {
+      "acceptable_cwes": [
+        "CWE-20",
+        "CWE-248",
+        "CWE-703"
+      ],
+      "audit_rank": 9,
+      "audit_tier": 1,
+      "clean_case_id": "python-public-pdls-modify-menu-actions-4-fix",
+      "cwe": "CWE-129",
+      "extra_paths": [],
+      "fix_diff_sha256": "1252b638d0bf4aa67f498acc3465c231a4b53f88ef9850d5628306f5bdf221f1",
+      "has_python_regression_test": false,
+      "needle": "self.FocusFunction = [None, self.TypeButton0Press, self.TypeButton1Press, self.TypeButton2Press, self.SeasonButton0Press, self.SeasonButton1Press, self.SeasonButton2Press, self.SeasonButton3Press, None, self.CancelCreation, self.SaveDish]",
+      "primary_path": "src/main.py",
+      "public_url": "https://github.com/pirlouix-dev/PDLS/pull/4",
+      "pull_request": 4,
+      "repository": "pirlouix-dev/PDLS",
+      "risk_case_id": "python-public-pdls-modify-menu-actions-4-regression",
+      "severity": "medium",
+      "slug": "pdls-modify-menu-actions",
+      "summary": "The modify menu has fewer action callbacks than focusable controls and indexes past the list.",
+      "title": "Fix IndexError crash when navigating to delete button in ModifyMenu"
+    },
+    {
+      "acceptable_cwes": [
+        "CWE-20",
+        "CWE-440",
+        "CWE-670",
+        "CWE-754"
+      ],
+      "audit_rank": 13,
+      "audit_tier": 1,
+      "clean_case_id": "python-public-hexchess-wrong-outcome-field-91-fix",
+      "cwe": "CWE-682",
+      "extra_paths": [],
+      "fix_diff_sha256": "6fac17c7924cfd29ccf0c950da2fe1b4ed893f3416e5843cafca7c65d55da2b2",
+      "has_python_regression_test": true,
+      "needle": "if winner == \"white\":",
+      "primary_path": "training/trainer_loop.py",
+      "public_url": "https://github.com/k15z/hexchess-zero/pull/91",
+      "pull_request": 91,
+      "repository": "k15z/hexchess-zero",
+      "risk_case_id": "python-public-hexchess-wrong-outcome-field-91-regression",
+      "severity": "medium",
+      "slug": "hexchess-wrong-outcome-field",
+      "summary": "Gauntlet scoring reads winner even though the result contract stores outcome, so wins are not counted.",
+      "title": "gating: fix _default_gauntlet reading wrong result field"
+    },
+    {
+      "acceptable_cwes": [
+        "CWE-20",
+        "CWE-248",
+        "CWE-703"
+      ],
+      "audit_rank": 14,
+      "audit_tier": 1,
+      "clean_case_id": "python-public-mcp-empty-argv-40-fix",
+      "cwe": "CWE-129",
+      "extra_paths": [],
+      "fix_diff_sha256": "87ad014c559e9576cc882d5f19099a2a279abc4d87ef73885a5b0c1f5b32615d",
+      "has_python_regression_test": false,
+      "needle": "if args[0] == \"--check\":",
+      "primary_path": "home.py",
+      "public_url": "https://github.com/AuroraQuen/MCP/pull/40",
+      "pull_request": 40,
+      "repository": "AuroraQuen/MCP",
+      "risk_case_id": "python-public-mcp-empty-argv-40-regression",
+      "severity": "medium",
+      "slug": "mcp-empty-argv",
+      "summary": "Calling the entry point without arguments indexes an empty argument list.",
+      "title": "Fix IndexError when home.py called with no arguments"
+    },
+    {
+      "acceptable_cwes": [
+        "CWE-20",
+        "CWE-248",
+        "CWE-703"
+      ],
+      "audit_rank": 15,
+      "audit_tier": 1,
+      "clean_case_id": "python-public-yt-dlp-empty-facebook-entries-8681-fix",
+      "cwe": "CWE-129",
+      "extra_paths": [],
+      "fix_diff_sha256": "9e6962d16aec0abbe73620aef1c8179920d866edeae670a64c2208b7e1f0a033",
+      "has_python_regression_test": false,
+      "needle": "video_info = entries[0]",
+      "primary_path": "yt_dlp/extractor/facebook.py",
+      "public_url": "https://github.com/yt-dlp/yt-dlp/pull/8681",
+      "pull_request": 8681,
+      "repository": "yt-dlp/yt-dlp",
+      "risk_case_id": "python-public-yt-dlp-empty-facebook-entries-8681-regression",
+      "severity": "medium",
+      "slug": "yt-dlp-empty-facebook-entries",
+      "summary": "A Facebook attachment with no extracted entries is indexed at zero.",
+      "title": "[ie/Facebook] Fix Unhandled IndexError"
+    },
+    {
+      "acceptable_cwes": [
+        "CWE-440",
+        "CWE-682",
+        "CWE-843"
+      ],
+      "audit_rank": 16,
+      "audit_tier": 1,
+      "clean_case_id": "python-public-conhamriver-string-duration-29-fix",
+      "cwe": "CWE-704",
+      "extra_paths": [],
+      "fix_diff_sha256": "a69fcad4511602397b68fe83201c107508cb0bffca748e522d4402edd99c156a",
+      "has_python_regression_test": false,
+      "needle": "\"duration_hours\": round((a.get(\"Duration\") or 0) / 60, 2) if a.get(\"Duration\") else \"\",",
+      "primary_path": "scripts/investigate_nearby_csos.py",
+      "public_url": "https://github.com/benevpi/conhamriver/pull/29",
+      "pull_request": 29,
+      "repository": "benevpi/conhamriver",
+      "risk_case_id": "python-public-conhamriver-string-duration-29-regression",
+      "severity": "medium",
+      "slug": "conhamriver-string-duration",
+      "summary": "The API Duration field can be a string and is divided as if it were numeric.",
+      "title": "Fix TypeError in nearby-CSO fetch (string Duration field)"
+    },
+    {
+      "acceptable_cwes": [
+        "CWE-20",
+        "CWE-440",
+        "CWE-670",
+        "CWE-754"
+      ],
+      "audit_rank": 17,
+      "audit_tier": 1,
+      "clean_case_id": "python-public-zmk-failed-prefix-7-fix",
+      "cwe": "CWE-682",
+      "extra_paths": [],
+      "fix_diff_sha256": "cee1244c107773a0eb17cdbb2aaef733ebe50cc34734c23fcaa16b43c3a235e8",
+      "has_python_regression_test": false,
+      "needle": "or line.startswith(\"FAIL:\")",
+      "primary_path": "scripts/zmk_test.py",
+      "public_url": "https://github.com/cormoran/zmk-west-commands/pull/7",
+      "pull_request": 7,
+      "repository": "cormoran/zmk-west-commands",
+      "risk_case_id": "python-public-zmk-failed-prefix-7-regression",
+      "severity": "medium",
+      "slug": "zmk-failed-prefix",
+      "summary": "Failed test output uses the FAILED prefix, so failures are not recognized.",
+      "title": "Fix wrong test result prefix"
+    },
+    {
+      "acceptable_cwes": [
+        "CWE-20",
+        "CWE-248",
+        "CWE-703"
+      ],
+      "audit_rank": 19,
+      "audit_tier": 1,
+      "clean_case_id": "python-public-omlx-none-logits-processors-1747-fix",
+      "cwe": "CWE-476",
+      "extra_paths": [],
+      "fix_diff_sha256": "58e65d323c967476a37b861649145b2fc133e170cd2176487da858b5976ebf0f",
+      "has_python_regression_test": false,
+      "needle": "logits_processors=logits_processors if logits_processors else None,",
+      "primary_path": "omlx/scheduler.py",
+      "public_url": "https://github.com/jundot/omlx/pull/1747",
+      "pull_request": 1747,
+      "repository": "jundot/omlx",
+      "risk_case_id": "python-public-omlx-none-logits-processors-1747-regression",
+      "severity": "medium",
+      "slug": "omlx-none-logits-processors",
+      "summary": "An empty processor list is converted to None although the downstream batch iterates it.",
+      "title": "fix: normalise logits_processors None to [] to avoid mlx-lm crash (#934)"
+    },
+    {
+      "acceptable_cwes": [
+        "CWE-20",
+        "CWE-703"
+      ],
+      "audit_rank": 21,
+      "audit_tier": 1,
+      "clean_case_id": "python-public-sonar-missing-period-2401-fix",
+      "cwe": "CWE-248",
+      "extra_paths": [],
+      "fix_diff_sha256": "b528a1904b1184a67fb89f383416d2488a1c86802a90e17dcf25a81cb680c003",
+      "has_python_regression_test": false,
+      "needle": "self.value = self.__converted_value(data.get(\"value\") or data[\"period\"].get(\"value\"))",
+      "primary_path": "sonar/measures.py",
+      "public_url": "https://github.com/okorach/sonar-tools/pull/2401",
+      "pull_request": 2401,
+      "repository": "okorach/sonar-tools",
+      "risk_case_id": "python-public-sonar-missing-period-2401-regression",
+      "severity": "medium",
+      "slug": "sonar-missing-period",
+      "summary": "Cloud measures without a period field are indexed directly.",
+      "title": "Fix KeyError on period field in sonar-measures-export on SonarQube Cloud (#2400)"
+    },
+    {
+      "acceptable_cwes": [
+        "CWE-20",
+        "CWE-248",
+        "CWE-703"
+      ],
+      "audit_rank": 24,
+      "audit_tier": 1,
+      "clean_case_id": "python-public-bluebird-none-route-103-fix",
+      "cwe": "CWE-476",
+      "extra_paths": [],
+      "fix_diff_sha256": "8b752cc41d7e6f8e25682e8cd50b86d2eab777d023eb4c0717592c1d8201835e",
+      "has_python_regression_test": false,
+      "needle": "aircraft.flight_plan.route.current = list(row.route_current)",
+      "primary_path": "bluebird-dt/bluebird_dt/events/event_handler.py",
+      "public_url": "https://github.com/project-bluebird/BluebirdATC/pull/103",
+      "pull_request": 103,
+      "repository": "project-bluebird/BluebirdATC",
+      "risk_case_id": "python-public-bluebird-none-route-103-regression",
+      "severity": "medium",
+      "slug": "bluebird-none-route",
+      "summary": "A nullable current route is unconditionally converted to a list.",
+      "title": "fix: Handle current route as None for aircraft internal logs"
+    },
+    {
+      "acceptable_cwes": [
+        "CWE-628",
+        "CWE-703"
+      ],
+      "audit_rank": 26,
+      "audit_tier": 1,
+      "clean_case_id": "python-public-glasshouse-query-parameter-count-2-fix",
+      "cwe": "CWE-685",
+      "extra_paths": [],
+      "fix_diff_sha256": "2d0c07d393ff9036b5d82ec62fafa9d9e54da15208e4d503348c564d9566cd8a",
+      "has_python_regression_test": false,
+      "needle": "cur.execute(query, (settings.lookback_days, settings.max_transcripts))",
+      "primary_path": "src/db/transcripts.py",
+      "public_url": "https://github.com/MitchelTurner/Glasshouse/pull/2",
+      "pull_request": 2,
+      "repository": "MitchelTurner/Glasshouse",
+      "risk_case_id": "python-public-glasshouse-query-parameter-count-2-regression",
+      "severity": "medium",
+      "slug": "glasshouse-query-parameter-count",
+      "summary": "The fallback query has one placeholder but is always executed with two parameters.",
+      "title": "Fix IndexError in fetch_recent_meeting_transcripts"
+    },
+    {
+      "acceptable_cwes": [
+        "CWE-440",
+        "CWE-682",
+        "CWE-843"
+      ],
+      "audit_rank": 27,
+      "audit_tier": 1,
+      "clean_case_id": "python-public-vecmocon-date-string-subtraction-13-fix",
+      "cwe": "CWE-704",
+      "extra_paths": [],
+      "fix_diff_sha256": "544406bf5393ef1a25a73c5289b233591647f49225cad4832b09286e81d842dd",
+      "has_python_regression_test": false,
+      "needle": "doc.custom_delay_days = (doc.custom_submitted_date - doc.custom_due_date).days if doc.custom_due_date else 0",
+      "primary_path": "vecmocon_customization/override/quality_inspection.py",
+      "public_url": "https://github.com/mi-cloud-tech/vecmocon_customization/pull/13",
+      "pull_request": 13,
+      "repository": "mi-cloud-tech/vecmocon_customization",
+      "risk_case_id": "python-public-vecmocon-date-string-subtraction-13-regression",
+      "severity": "medium",
+      "slug": "vecmocon-date-string-subtraction",
+      "summary": "A date object is subtracted from an unparsed date string.",
+      "title": "fix(vecmocon): date-string typeError in QI"
+    },
+    {
+      "acceptable_cwes": [
+        "CWE-20",
+        "CWE-703"
+      ],
+      "audit_rank": 28,
+      "audit_tier": 1,
+      "clean_case_id": "python-public-modorganizer-dict-choice-index-1027-fix",
+      "cwe": "CWE-248",
+      "extra_paths": [],
+      "fix_diff_sha256": "6796f3a953defe0aaf7c0ebef6ec7abb102aadab57b8ca308151b6c2974ce429",
+      "has_python_regression_test": false,
+      "needle": "choice = matches[0]",
+      "primary_path": "src/mo2-lint/step/external_resources.py",
+      "public_url": "https://github.com/Furglitch/modorganizer2-linux-installer/pull/1027",
+      "pull_request": 1027,
+      "repository": "Furglitch/modorganizer2-linux-installer",
+      "risk_case_id": "python-public-modorganizer-dict-choice-index-1027-regression",
+      "severity": "medium",
+      "slug": "modorganizer-dict-choice-index",
+      "summary": "A dictionary of matches is indexed with numeric zero instead of its first key.",
+      "title": "Fix KeyError when selecting a script extender"
+    },
+    {
+      "acceptable_cwes": [
+        "CWE-20",
+        "CWE-440",
+        "CWE-670",
+        "CWE-754"
+      ],
+      "audit_rank": 29,
+      "audit_tier": 1,
+      "clean_case_id": "python-public-naturo-keyerror-user-message-1181-fix",
+      "cwe": "CWE-682",
+      "extra_paths": [],
+      "fix_diff_sha256": "df0751b1efcf4018b2bb09c1a295e01706cc554d250e3fabe7dac0649450025a",
+      "has_python_regression_test": true,
+      "needle": "raise KeyError(f\"Selector not found: @{app_name}/{name}\")",
+      "primary_path": "naturo/cli/selector_cmd.py",
+      "public_url": "https://github.com/AcePeak/naturo/pull/1181",
+      "pull_request": 1181,
+      "repository": "AcePeak/naturo",
+      "risk_case_id": "python-public-naturo-keyerror-user-message-1181-regression",
+      "severity": "low",
+      "slug": "naturo-keyerror-user-message",
+      "summary": "KeyError stringification adds quotes to a user-facing selector error message.",
+      "title": "fix: emit clean saved-selector not-found message without KeyError quotes (fixes #1172)"
+    },
+    {
+      "acceptable_cwes": [
+        "CWE-20",
+        "CWE-248",
+        "CWE-703"
+      ],
+      "audit_rank": 31,
+      "audit_tier": 1,
+      "clean_case_id": "python-public-godon-single-column-row-142-fix",
+      "cwe": "CWE-129",
+      "extra_paths": [],
+      "fix_diff_sha256": "79348b75a6be73cbbc2b1b5c35c4793a4d296bd61f7f32f818993ce81e38773e",
+      "has_python_regression_test": false,
+      "needle": "logger.info(f\"Refreshed baseline params from DB (best value: {row[1]:.4f})\")",
+      "primary_path": "engine/detection_coordinator.py",
+      "public_url": "https://github.com/godon-dev/godon-breeders/pull/142",
+      "pull_request": 142,
+      "repository": "godon-dev/godon-breeders",
+      "risk_case_id": "python-public-godon-single-column-row-142-regression",
+      "severity": "medium",
+      "slug": "godon-single-column-row",
+      "summary": "A single-column database result is logged by indexing a nonexistent second column.",
+      "title": "fix: row[1] IndexError on single-column query"
+    },
+    {
+      "acceptable_cwes": [
+        "CWE-20",
+        "CWE-248",
+        "CWE-703"
+      ],
+      "audit_rank": 32,
+      "audit_tier": 1,
+      "clean_case_id": "python-public-token-optimizer-none-store-6-fix",
+      "cwe": "CWE-476",
+      "extra_paths": [],
+      "fix_diff_sha256": "11f9a41cddd639ccb32be2475b86a81b3ac76b534938d6f5c1dd152c4ad10375",
+      "has_python_regression_test": false,
+      "needle": "files = store.get_all_file_entries()",
+      "primary_path": "skills/token-optimizer/scripts/read_cache.py",
+      "public_url": "https://github.com/glupta/token-optimizer/pull/6",
+      "pull_request": 6,
+      "repository": "glupta/token-optimizer",
+      "risk_case_id": "python-public-token-optimizer-none-store-6-regression",
+      "severity": "medium",
+      "slug": "token-optimizer-none-store",
+      "summary": "A failed cache connection returns None and is dereferenced.",
+      "title": "audit: guard handle_stats against None store and close connection"
+    },
+    {
+      "acceptable_cwes": [
+        "CWE-20",
+        "CWE-248",
+        "CWE-703"
+      ],
+      "audit_rank": 33,
+      "audit_tier": 1,
+      "clean_case_id": "python-public-robots-sim-scalar-rgba-141-fix",
+      "cwe": "CWE-129",
+      "extra_paths": [],
+      "fix_diff_sha256": "9fcd393603ff57ccc2b6bf8d23b7afd6c7f3ca251f025a78e77715a895eabfab",
+      "has_python_regression_test": true,
+      "needle": "except (RuntimeError, ValueError, AttributeError, TypeError) as e:",
+      "primary_path": "strands_robots_sim/isaac/simulation.py",
+      "public_url": "https://github.com/strands-labs/robots-sim/pull/141",
+      "pull_request": 141,
+      "repository": "strands-labs/robots-sim",
+      "risk_case_id": "python-public-robots-sim-scalar-rgba-141-regression",
+      "severity": "medium",
+      "slug": "robots-sim-scalar-rgba",
+      "summary": "A scalar RTX warm-up buffer raises IndexError outside the render recovery handler.",
+      "title": "fix(isaac): render() raises unguarded IndexError during RTX warm-up (closes #140)"
+    },
+    {
+      "acceptable_cwes": [
+        "CWE-20",
+        "CWE-248",
+        "CWE-703"
+      ],
+      "audit_rank": 34,
+      "audit_tier": 1,
+      "clean_case_id": "python-public-aws-audit-none-waf-error-15-fix",
+      "cwe": "CWE-476",
+      "extra_paths": [],
+      "fix_diff_sha256": "73db95c4ec5fece2558027e0d8aadf4116dcc0783578b0addd0264ef637f764e",
+      "has_python_regression_test": true,
+      "needle": "errors.extend(waf_errors)",
+      "primary_path": "aws_account_audit/inventory.py",
+      "public_url": "https://github.com/steveyminecraft/aws-account-audit/pull/15",
+      "pull_request": 15,
+      "repository": "steveyminecraft/aws-account-audit",
+      "risk_case_id": "python-public-aws-audit-none-waf-error-15-regression",
+      "severity": "medium",
+      "slug": "aws-audit-none-waf-error",
+      "summary": "The optional WAF error is extended as an iterable even when it is None.",
+      "title": "fix: handle None WAF error when collecting CloudFront ACLs"
+    },
+    {
+      "acceptable_cwes": [
+        "CWE-20",
+        "CWE-248",
+        "CWE-703"
+      ],
+      "audit_rank": 35,
+      "audit_tier": 1,
+      "clean_case_id": "python-public-erpnext-none-bulk-args-56661-fix",
+      "cwe": "CWE-476",
+      "extra_paths": [],
+      "fix_diff_sha256": "08a93644a7dd7746015f1c56e8265bc3381805e0bcce1195e533382a88179495",
+      "has_python_regression_test": false,
+      "needle": "args = frappe._dict(frappe.parse_json(args))",
+      "primary_path": "erpnext/utilities/bulk_transaction.py",
+      "public_url": "https://github.com/frappe/erpnext/pull/56661",
+      "pull_request": 56661,
+      "repository": "frappe/erpnext",
+      "risk_case_id": "python-public-erpnext-none-bulk-args-56661-regression",
+      "severity": "medium",
+      "slug": "erpnext-none-bulk-args",
+      "summary": "A missing argument payload is converted into a mapping without a fallback.",
+      "title": "fix: handle None args in transaction_processing"
+    },
+    {
+      "acceptable_cwes": [
+        "CWE-440",
+        "CWE-682",
+        "CWE-843"
+      ],
+      "audit_rank": 37,
+      "audit_tier": 1,
+      "clean_case_id": "python-public-bitbucket-nested-admin-user-1641-fix",
+      "cwe": "CWE-704",
+      "extra_paths": [],
+      "fix_diff_sha256": "3a366fb6b298824d0a081a7889c7bce6c9ef7f534aba5a8886c776943eef3ae2",
+      "has_python_regression_test": false,
+      "needle": "repo_administrators.append(user)",
+      "primary_path": "atlassian/bitbucket/__init__.py",
+      "public_url": "https://github.com/atlassian-api/atlassian-python-api/pull/1641",
+      "pull_request": 1641,
+      "repository": "atlassian-api/atlassian-python-api",
+      "risk_case_id": "python-public-bitbucket-nested-admin-user-1641-regression",
+      "severity": "medium",
+      "slug": "bitbucket-nested-admin-user",
+      "summary": "The API wrapper returns administrator envelopes instead of their nested user objects.",
+      "title": "[Bitbucket] fix keyerror in repo_users_with_administrator_permissions"
+    },
+    {
+      "acceptable_cwes": [
+        "CWE-20",
+        "CWE-248",
+        "CWE-703"
+      ],
+      "audit_rank": 38,
+      "audit_tier": 1,
+      "clean_case_id": "python-public-skyrl-mamba-missing-mlp-1608-fix",
+      "cwe": "CWE-476",
+      "extra_paths": [],
+      "fix_diff_sha256": "24c1621261204878c2f59c6b9ff91296cd56e3cc6f0e5d553c0863147e7fd5a5",
+      "has_python_regression_test": false,
+      "needle": "if hasattr(layer.mlp, \"router\"):",
+      "primary_path": "skyrl/backends/skyrl_train/distributed/megatron/megatron_utils.py",
+      "public_url": "https://github.com/NovaSky-AI/SkyRL/pull/1608",
+      "pull_request": 1608,
+      "repository": "NovaSky-AI/SkyRL",
+      "risk_case_id": "python-public-skyrl-mamba-missing-mlp-1608-regression",
+      "severity": "medium",
+      "slug": "skyrl-mamba-missing-mlp",
+      "summary": "Mamba layers without an mlp attribute are dereferenced during router freezing.",
+      "title": "[bug] Fix `AttributeError` on `MambaLayer` in `freeze_moe_router`"
+    },
+    {
+      "acceptable_cwes": [
+        "CWE-440",
+        "CWE-682",
+        "CWE-843"
+      ],
+      "audit_rank": 39,
+      "audit_tier": 1,
+      "clean_case_id": "python-public-dashboard-null-email-79-fix",
+      "cwe": "CWE-704",
+      "extra_paths": [],
+      "fix_diff_sha256": "aa772c5b63cf058af7c3f85115e8b8324f85aceceb47f235de9890531203b692",
+      "has_python_regression_test": false,
+      "needle": "email: str = Field(..., max_length=100)",
+      "primary_path": "backend/app/schemas/__init__.py",
+      "public_url": "https://github.com/vllm-ascend/vllm_ascend_dashboard/pull/79",
+      "pull_request": 79,
+      "repository": "vllm-ascend/vllm_ascend_dashboard",
+      "risk_case_id": "python-public-dashboard-null-email-79-regression",
+      "severity": "medium",
+      "slug": "dashboard-null-email",
+      "summary": "The update schema requires an email even though partial updates may legitimately omit it.",
+      "title": "fix: email validators handle None to prevent TypeError on null email"
+    },
+    {
+      "acceptable_cwes": [
+        "CWE-20",
+        "CWE-248",
+        "CWE-703"
+      ],
+      "audit_rank": 40,
+      "audit_tier": 1,
+      "clean_case_id": "python-public-stargazing-none-pollution-53-fix",
+      "cwe": "CWE-476",
+      "extra_paths": [],
+      "fix_diff_sha256": "47e2e8bb17945830a83c577952ef5a316fceacc6fa65e9b85306935606d11337",
+      "has_python_regression_test": false,
+      "needle": "key=lambda x: x[\"pollution_info\"].brightness,",
+      "primary_path": "src/gis_service/parsers.py",
+      "public_url": "https://github.com/StarGazer1995/stargazing-place-finder/pull/53",
+      "pull_request": 53,
+      "repository": "StarGazer1995/stargazing-place-finder",
+      "risk_case_id": "python-public-stargazing-none-pollution-53-regression",
+      "severity": "medium",
+      "slug": "stargazing-none-pollution",
+      "summary": "Sorting dereferences nullable pollution metadata.",
+      "title": "fix: handle None pollution_info in light pollution sorter"
+    },
+    {
+      "acceptable_cwes": [
+        "CWE-20",
+        "CWE-440",
+        "CWE-670",
+        "CWE-754"
+      ],
+      "audit_rank": 42,
+      "audit_tier": 1,
+      "clean_case_id": "python-public-sglang-flatten-hidden-scale-18500-fix",
+      "cwe": "CWE-682",
+      "extra_paths": [],
+      "fix_diff_sha256": "1dd53e3278c9b93424d99ad27f0860025179c165bc7d445610febcdc1f7f51c1",
+      "has_python_regression_test": false,
+      "needle": "hidden_states_scale=hs_scale_linear.view(torch.float8_e4m3fn).flatten(),",
+      "primary_path": "python/sglang/srt/layers/moe/fused_moe_triton/layer.py",
+      "public_url": "https://github.com/sgl-project/sglang/pull/18500",
+      "pull_request": 18500,
+      "repository": "sgl-project/sglang",
+      "risk_case_id": "python-public-sglang-flatten-hidden-scale-18500-regression",
+      "severity": "medium",
+      "slug": "sglang-flatten-hidden-scale",
+      "summary": "Flattening the per-token hidden-state scale destroys the shape required by FP4 MoE autotuning.",
+      "title": "[Flashinfer Autotune] Fix FlashInfer FP4 MoE autotuning crash by removing incorrect flatten on hidden_states_scale"
+    },
+    {
+      "acceptable_cwes": [
+        "CWE-20",
+        "CWE-248",
+        "CWE-703"
+      ],
+      "audit_rank": 43,
+      "audit_tier": 1,
+      "clean_case_id": "python-public-reimubot-missing-colon-4-fix",
+      "cwe": "CWE-129",
+      "extra_paths": [],
+      "fix_diff_sha256": "d207421ed8e617b2b8870cb5261a5ea9adbba777f982761d6403c680936aa2d4",
+      "has_python_regression_test": false,
+      "needle": "fortune_type = result_text.split(\"\\n\")[0].split(\":\")[1].strip()",
+      "primary_path": "Reimu.py",
+      "public_url": "https://github.com/Shiroko253/Reimubot/pull/4",
+      "pull_request": 4,
+      "repository": "Shiroko253/Reimubot",
+      "risk_case_id": "python-public-reimubot-missing-colon-4-regression",
+      "severity": "medium",
+      "slug": "reimubot-missing-colon",
+      "summary": "A fortune response without a colon is indexed past the split result.",
+      "title": "Fix IndexError in draw_lots_command when result_text has no colon"
+    },
+    {
+      "acceptable_cwes": [
+        "CWE-20",
+        "CWE-248",
+        "CWE-703"
+      ],
+      "audit_rank": 44,
+      "audit_tier": 1,
+      "clean_case_id": "python-public-mnemo-none-topic-suggestion-879-fix",
+      "cwe": "CWE-476",
+      "extra_paths": [],
+      "fix_diff_sha256": "cb7ab2e4cb2472d980b8f31ab842119d95d0ed1c51066822b66cafe609d47964",
+      "has_python_regression_test": true,
+      "needle": "closest = difflib.get_close_matches(topic, list(valid_topics.keys()), n=1)",
+      "primary_path": "src/mnemo_mcp/server.py",
+      "public_url": "https://github.com/n24q02m/mnemo-mcp/pull/879",
+      "pull_request": 879,
+      "repository": "n24q02m/mnemo-mcp",
+      "risk_case_id": "python-public-mnemo-none-topic-suggestion-879-regression",
+      "severity": "medium",
+      "slug": "mnemo-none-topic-suggestion",
+      "summary": "A missing topic is passed to difflib as though it were a string.",
+      "title": "🎨 Palette: Add graceful error handling for None inputs in MCP tools"
+    },
+    {
+      "acceptable_cwes": [
+        "CWE-20",
+        "CWE-703"
+      ],
+      "audit_rank": 45,
+      "audit_tier": 1,
+      "clean_case_id": "python-public-auto-post-history-missing-soal-3-fix",
+      "cwe": "CWE-248",
+      "extra_paths": [],
+      "fix_diff_sha256": "15b83e25621fd3914c12e1b803e18fb63eec774cadf445542107a693440986a1",
+      "has_python_regression_test": false,
+      "needle": "f\"- {(h['soal'] if isinstance(h, dict) else h)[:80]}\"",
+      "primary_path": "main.py",
+      "public_url": "https://github.com/akunnft-ux/auto-post-soal-matematika/pull/3",
+      "pull_request": 3,
+      "repository": "akunnft-ux/auto-post-soal-matematika",
+      "risk_case_id": "python-public-auto-post-history-missing-soal-3-regression",
+      "severity": "medium",
+      "slug": "auto-post-history-missing-soal",
+      "summary": "Non-question history dictionaries do not contain the directly indexed soal key.",
+      "title": "fix: KeyError when history item is materi/fakta (no 'soal' key) [skip…"
+    },
+    {
+      "acceptable_cwes": [
+        "CWE-703",
+        "CWE-754"
+      ],
+      "audit_rank": 47,
+      "audit_tier": 1,
+      "clean_case_id": "python-public-mcp-db-optional-asyncpg-exception-8-fix",
+      "cwe": "CWE-248",
+      "extra_paths": [],
+      "fix_diff_sha256": "63615121ddfc347cb19ada7039887810b02e8a12d92552745622b57da657038e",
+      "has_python_regression_test": false,
+      "needle": "except (asyncio.TimeoutError, asyncpg.exceptions.QueryCanceledError):",
+      "primary_path": "src/database/async_connectors.py",
+      "public_url": "https://github.com/Bright0505/mcp-db/pull/8",
+      "pull_request": 8,
+      "repository": "Bright0505/mcp-db",
+      "risk_case_id": "python-public-mcp-db-optional-asyncpg-exception-8-regression",
+      "severity": "medium",
+      "slug": "mcp-db-optional-asyncpg-exception",
+      "summary": "When asyncpg is unavailable, evaluating its exception class raises AttributeError while handling a timeout.",
+      "title": "fix: 防止 asyncpg 缺失時 except clause 拋 AttributeError"
+    },
+    {
+      "acceptable_cwes": [
+        "CWE-20",
+        "CWE-248",
+        "CWE-703"
+      ],
+      "audit_rank": 50,
+      "audit_tier": 1,
+      "clean_case_id": "python-public-voltaire-arbitrum-fee-tasks-57-fix",
+      "cwe": "CWE-129",
+      "extra_paths": [],
+      "fix_diff_sha256": "308f6e0d487278e2053d95222c661cc9c3d419e3384a6d525b147e8170f0a4bd",
+      "has_python_regression_test": false,
+      "needle": "if self.chain_id == 999 or self.chain_id == 998:  # HyperEVM",
+      "primary_path": "voltaire_bundler/execution_endpoint.py",
+      "public_url": "https://github.com/candidelabs/voltaire/pull/57",
+      "pull_request": 57,
+      "repository": "candidelabs/voltaire",
+      "risk_case_id": "python-public-voltaire-arbitrum-fee-tasks-57-regression",
+      "severity": "medium",
+      "slug": "voltaire-arbitrum-fee-tasks",
+      "summary": "Arbitrum skips the priority-fee task but is not handled as a one-task chain, so the result list is indexed past its end.",
+      "title": "fix: voltaire_feesPerGas IndexError on Arbitrum"
+    },
+    {
+      "acceptable_cwes": [
+        "CWE-20",
+        "CWE-440",
+        "CWE-670",
+        "CWE-754"
+      ],
+      "audit_rank": 53,
+      "audit_tier": 1,
+      "clean_case_id": "python-public-nakama-wrong-calendar-event-field-902-fix",
+      "cwe": "CWE-682",
+      "extra_paths": [],
+      "fix_diff_sha256": "916b5ec9821cfff0639715fab7620e5f567f5eda0ee0878912ce3df2c22a8327",
+      "has_python_regression_test": false,
+      "needle": "if entry.is_linked and entry.calendar_event_id:",
+      "primary_path": "thousand_sunny/routers/bridge_weekly.py",
+      "public_url": "https://github.com/shosho-chang/nakama/pull/902",
+      "pull_request": 902,
+      "repository": "shosho-chang/nakama",
+      "risk_case_id": "python-public-nakama-wrong-calendar-event-field-902-regression",
+      "severity": "medium",
+      "slug": "nakama-wrong-calendar-event-field",
+      "summary": "Deletion checks a nonexistent calendar_event_id field instead of the stored event_id.",
+      "title": "fix(bridge): 任務刪除 AttributeError — entry.event_id 非 calendar_event_id"
+    },
+    {
+      "acceptable_cwes": [
+        "CWE-20",
+        "CWE-703"
+      ],
+      "audit_rank": 54,
+      "audit_tier": 1,
+      "clean_case_id": "python-public-susabiyu-missing-category-18-fix",
+      "cwe": "CWE-248",
+      "extra_paths": [],
+      "fix_diff_sha256": "58deb8cf2faf81198ac6b981b80d7c1b10b009b42dba57a30d6c59ff0cc0553b",
+      "has_python_regression_test": false,
+      "needle": "print(\"DL:\", dest, \"| [%s]\" % f[\"cat\"], \"caption:\", cap)",
+      "primary_path": "susabiyu-remotion/fetch_drive_photos.py",
+      "public_url": "https://github.com/amami-cell/susabiyu-ig-auto/pull/18",
+      "pull_request": 18,
+      "repository": "amami-cell/susabiyu-ig-auto",
+      "risk_case_id": "python-public-susabiyu-missing-category-18-regression",
+      "severity": "medium",
+      "slug": "susabiyu-missing-category",
+      "summary": "Approved items without a category fail during logging before publication.",
+      "title": "fix: 承認投稿(sushi)が KeyError: 'cat' で失敗し未投稿になる不具合を修正"
+    },
+    {
+      "acceptable_cwes": [
+        "CWE-20",
+        "CWE-703"
+      ],
+      "audit_rank": 55,
+      "audit_tier": 1,
+      "clean_case_id": "python-public-bobobobo-missing-send-id-4-fix",
+      "cwe": "CWE-248",
+      "extra_paths": [],
+      "fix_diff_sha256": "aec70f87efe46fd1416e9fc5ee6ca57b772a329a9737db0e2623f4d58fb81e86",
+      "has_python_regression_test": false,
+      "needle": "msg_sub = msg_df[[c for c in msg_cols if c in msg_df.columns]].copy()",
+      "primary_path": "push_analytics_dashboard.py",
+      "public_url": "https://github.com/kimbonnie91-hue/bobobobo/pull/4",
+      "pull_request": 4,
+      "repository": "kimbonnie91-hue/bobobobo",
+      "risk_case_id": "python-public-bobobobo-missing-send-id-4-regression",
+      "severity": "medium",
+      "slug": "bobobobo-missing-send-id",
+      "summary": "An empty or unrecognized message sheet proceeds without the send_id column required by the join.",
+      "title": "Fix send_id KeyError when message file headers don't match"
+    },
+    {
+      "acceptable_cwes": [
+        "CWE-20",
+        "CWE-248",
+        "CWE-703"
+      ],
+      "audit_rank": 57,
+      "audit_tier": 1,
+      "clean_case_id": "python-public-hezo-null-html-name-254-fix",
+      "cwe": "CWE-476",
+      "extra_paths": [],
+      "fix_diff_sha256": "86015e88996ea40b9a253e722eeb4914e014b79a93bb72f1be0513ad373a9b8c",
+      "has_python_regression_test": false,
+      "needle": "h3.string = svc.get(\"name\", \"\")",
+      "primary_path": "agents/build/renderer/html_renderer.py",
+      "public_url": "https://github.com/MIJUNG-HEZO/HEZO-Agent/pull/254",
+      "pull_request": 254,
+      "repository": "MIJUNG-HEZO/HEZO-Agent",
+      "risk_case_id": "python-public-hezo-null-html-name-254-regression",
+      "severity": "medium",
+      "slug": "hezo-null-html-name",
+      "summary": "An explicitly null service name is assigned to an HTML text node and raises TypeError.",
+      "title": "fix: html_renderer null 필드 TypeError 수정"
+    },
+    {
+      "acceptable_cwes": [
+        "CWE-20",
+        "CWE-248",
+        "CWE-703"
+      ],
+      "audit_rank": 58,
+      "audit_tier": 1,
+      "clean_case_id": "python-public-lenie-short-https-prefix-112-fix",
+      "cwe": "CWE-129",
+      "extra_paths": [],
+      "fix_diff_sha256": "0c798a88c96cfdcfa51928d025ccf5803d54443079e531c43a2e0e6a5062952b",
+      "has_python_regression_test": false,
+      "needle": "if text[i] == \"h\" and text[i+1] == \"t\" and text[i+2] == \"t\" and text[i+3] == \"p\" and text[i+4] == \"s\" and \\",
+      "primary_path": "backend/library/lenie_markdown.py",
+      "public_url": "https://github.com/ziutus/ai_assistant_lenie/pull/112",
+      "pull_request": 112,
+      "repository": "ziutus/ai_assistant_lenie",
+      "risk_case_id": "python-public-lenie-short-https-prefix-112-regression",
+      "severity": "medium",
+      "slug": "lenie-short-https-prefix",
+      "summary": "The URL detector reads seven characters past the current position without checking remaining length.",
+      "title": "fix: prevent IndexError in links_correct"
+    },
+    {
+      "acceptable_cwes": [
+        "CWE-248",
+        "CWE-703"
+      ],
+      "audit_rank": 60,
+      "audit_tier": 1,
+      "clean_case_id": "python-public-b3agente-empty-ttl-env-1-fix",
+      "cwe": "CWE-20",
+      "extra_paths": [],
+      "fix_diff_sha256": "4ec5d626c0073cd07a13ae2d6e5b058d62ba8f5ab3748031b2552a0a32521fb2",
+      "has_python_regression_test": false,
+      "needle": "_SESSION_TTL_DAYS = int(os.environ.get(\"B3_SESSION_TTL_DAYS\", \"90\"))",
+      "primary_path": "server/app/auth.py",
+      "public_url": "https://github.com/AlexandreCamerini/b3agente/pull/1",
+      "pull_request": 1,
+      "repository": "AlexandreCamerini/b3agente",
+      "risk_case_id": "python-public-b3agente-empty-ttl-env-1-regression",
+      "severity": "medium",
+      "slug": "b3agente-empty-ttl-env",
+      "summary": "An explicitly empty TTL environment variable is passed to int and prevents startup.",
+      "title": "Railway Deployment #761e7b fix: handle empty B3_SESSION_TTL_DAYS"
+    },
+    {
+      "acceptable_cwes": [
+        "CWE-703",
+        "CWE-754"
+      ],
+      "audit_rank": 61,
+      "audit_tier": 1,
+      "clean_case_id": "python-public-ephemeraldaddy-pyside-scroll-enum-144-fix",
+      "cwe": "CWE-248",
+      "extra_paths": [],
+      "fix_diff_sha256": "808a8744145b3cdd8f68ebc5073579cb0e8ad7e7be70dc8bf1ed9fa7ec0a54b3",
+      "has_python_regression_test": false,
+      "needle": "self.scrollToItem(item, QAbstractItemView.PositionAtCenter)",
+      "primary_path": "ephemeraldaddy/gui/app.py",
+      "public_url": "https://github.com/croweykid/ephemeraldaddy/pull/144",
+      "pull_request": 144,
+      "repository": "croweykid/ephemeraldaddy",
+      "risk_case_id": "python-public-ephemeraldaddy-pyside-scroll-enum-144-regression",
+      "severity": "medium",
+      "slug": "ephemeraldaddy-pyside-scroll-enum",
+      "summary": "PySide6 no longer exposes PositionAtCenter directly on QAbstractItemView.",
+      "title": "Fix Database View letter-jump crash on PySide6"
+    },
+    {
+      "acceptable_cwes": [
+        "CWE-20",
+        "CWE-248",
+        "CWE-703"
+      ],
+      "audit_rank": 62,
+      "audit_tier": 1,
+      "clean_case_id": "python-public-ps2-none-sys-argv-18-fix",
+      "cwe": "CWE-476",
+      "extra_paths": [],
+      "fix_diff_sha256": "7b7794da3ff1c1dbad3cf783c89a1b39072ff3574b13a043f14703fbc442509d",
+      "has_python_regression_test": false,
+      "needle": "argv = list(getattr(sys, \"argv\", [])[1:] if argv is None else argv)",
+      "primary_path": "launcher/main.py",
+      "public_url": "https://github.com/NathanNeurotic/PS2-Servers/pull/18",
+      "pull_request": 18,
+      "repository": "NathanNeurotic/PS2-Servers",
+      "risk_case_id": "python-public-ps2-none-sys-argv-18-regression",
+      "severity": "medium",
+      "slug": "ps2-none-sys-argv",
+      "summary": "An explicitly None sys.argv value is sliced during startup.",
+      "title": "main(): handle sys.argv explicitly set to None"
+    },
+    {
+      "acceptable_cwes": [
+        "CWE-20",
+        "CWE-703"
+      ],
+      "audit_rank": 3,
+      "audit_tier": 2,
+      "clean_case_id": "python-public-samsungtv-missing-options-107-fix",
+      "cwe": "CWE-248",
+      "extra_paths": [],
+      "fix_diff_sha256": "f28c2b96d117c1765f47ee74afc4020ffa05e75c719ab8ac1cc8687b4d89a851",
+      "has_python_regression_test": false,
+      "needle": "option = self._entry_data[DATA_OPTIONS].get(param)",
+      "primary_path": "custom_components/samsungtv_smart/media_player.py",
+      "public_url": "https://github.com/TheFab21/ha-samsungtv-smart/pull/107",
+      "pull_request": 107,
+      "repository": "TheFab21/ha-samsungtv-smart",
+      "risk_case_id": "python-public-samsungtv-missing-options-107-regression",
+      "severity": "medium",
+      "slug": "samsungtv-missing-options",
+      "summary": "A transient reload state omits DATA_OPTIONS and the media player indexes it directly.",
+      "title": "Fix KeyError 'options' on reload + name TV in auth-token logs (8.1.0b40)"
+    },
+    {
+      "acceptable_cwes": [
+        "CWE-20",
+        "CWE-248",
+        "CWE-703"
+      ],
+      "audit_rank": 4,
+      "audit_tier": 2,
+      "clean_case_id": "python-public-soccer-empty-control-history-10-fix",
+      "cwe": "CWE-129",
+      "extra_paths": [],
+      "fix_diff_sha256": "43a9874d6f05735df090ab6c7b5db8aa4662a1480ce60de4ce103b98435f4b17",
+      "has_python_regression_test": false,
+      "needle": "team_ball_control.append(team_ball_control[-1])",
+      "primary_path": "main.py",
+      "public_url": "https://github.com/hackolite/SoccerAnalytics/pull/10",
+      "pull_request": 10,
+      "repository": "hackolite/SoccerAnalytics",
+      "risk_case_id": "python-public-soccer-empty-control-history-10-regression",
+      "severity": "medium",
+      "slug": "soccer-empty-control-history",
+      "summary": "The first frame without an assignment copies from an empty control history.",
+      "title": "Fix IndexError and ZeroDivisionError in ball control tracking"
+    },
+    {
+      "acceptable_cwes": [
+        "CWE-20",
+        "CWE-248",
+        "CWE-703"
+      ],
+      "audit_rank": 5,
+      "audit_tier": 2,
+      "clean_case_id": "python-public-librarian-none-document-text-48-fix",
+      "cwe": "CWE-476",
+      "extra_paths": [],
+      "fix_diff_sha256": "b306200ff8c9c6b809b0cbf45a7bbaccaf3a2b8af00057a1664bbf13caf6071e",
+      "has_python_regression_test": false,
+      "needle": "text = document.get('text', '')",
+      "primary_path": "ingestion/indexer.py",
+      "public_url": "https://github.com/tamzrod/Librarian/pull/48",
+      "pull_request": 48,
+      "repository": "tamzrod/Librarian",
+      "risk_case_id": "python-public-librarian-none-document-text-48-regression",
+      "severity": "medium",
+      "slug": "librarian-none-document-text",
+      "summary": "An explicitly null document text bypasses the default and is processed as a string.",
+      "title": "Fix: Handle None text in indexer to prevent 'NoneType' error"
+    },
+    {
+      "acceptable_cwes": [
+        "CWE-20",
+        "CWE-248",
+        "CWE-703"
+      ],
+      "audit_rank": 6,
+      "audit_tier": 2,
+      "clean_case_id": "python-public-ai-chat-empty-stream-choices-1-fix",
+      "cwe": "CWE-129",
+      "extra_paths": [],
+      "fix_diff_sha256": "072f086963f3a2690263d5598cbec47fdced132567a6122bdbdbcc4dbda3af92",
+      "has_python_regression_test": false,
+      "needle": "delta = chunk.choices[0].delta.content",
+      "primary_path": "infrastructure/api_handler.py",
+      "public_url": "https://github.com/sinotca529/ai-chat-tui/pull/1",
+      "pull_request": 1,
+      "repository": "sinotca529/ai-chat-tui",
+      "risk_case_id": "python-public-ai-chat-empty-stream-choices-1-regression",
+      "severity": "medium",
+      "slug": "ai-chat-empty-stream-choices",
+      "summary": "Streaming APIs can emit chunks with no choices, which are indexed at zero.",
+      "title": "fix: ストリーミング中に choices が空のチャンクで IndexError が起きるのを修正"
+    },
+    {
+      "acceptable_cwes": [
+        "CWE-20",
+        "CWE-703"
+      ],
+      "audit_rank": 7,
+      "audit_tier": 2,
+      "clean_case_id": "python-public-autogis-wrong-capability-key-63-fix",
+      "cwe": "CWE-248",
+      "extra_paths": [],
+      "fix_diff_sha256": "63c51f413e1d2207b8605bef56111f0b868ed1e60768111a1557527293a2f547",
+      "has_python_regression_test": true,
+      "needle": "_guard(\"LOCAL\")",
+      "primary_path": "autogis/adapters/cli.py",
+      "public_url": "https://github.com/0bnoxide/AutoGIS/pull/63",
+      "pull_request": 63,
+      "repository": "0bnoxide/AutoGIS",
+      "risk_case_id": "python-public-autogis-wrong-capability-key-63-regression",
+      "severity": "medium",
+      "slug": "autogis-wrong-capability-key",
+      "summary": "The import command passes a runtime name where the capability registry expects the tool name.",
+      "title": "fix(guard): resolve headless KeyError for import-edd, import-rtk-survey, route-survey123"
+    },
+    {
+      "acceptable_cwes": [
+        "CWE-20",
+        "CWE-248",
+        "CWE-703"
+      ],
+      "audit_rank": 9,
+      "audit_tier": 2,
+      "clean_case_id": "python-public-cv-studio-malformed-link-alias-759-fix",
+      "cwe": "CWE-129",
+      "extra_paths": [],
+      "fix_diff_sha256": "eacc031add11b59da043fa9f459e1e071d166407231689fa94057268e6417c37",
+      "has_python_regression_test": false,
+      "needle": "source_type = source.split(\":\")[2]",
+      "primary_path": "node_editor/node_main.py",
+      "public_url": "https://github.com/hackolite/CV_Studio/pull/759",
+      "pull_request": 759,
+      "repository": "hackolite/CV_Studio",
+      "risk_case_id": "python-public-cv-studio-malformed-link-alias-759-regression",
+      "severity": "medium",
+      "slug": "cv-studio-malformed-link-alias",
+      "summary": "A missing or malformed node alias is split and indexed without validating its shape.",
+      "title": "Fix IndexError in _callback_link when connecting MJPEG to VideoConcat"
+    },
+    {
+      "acceptable_cwes": [
+        "CWE-20",
+        "CWE-248",
+        "CWE-703"
+      ],
+      "audit_rank": 15,
+      "audit_tier": 2,
+      "clean_case_id": "python-public-fabrica-empty-static-interrupt-99-fix",
+      "cwe": "CWE-129",
+      "extra_paths": [],
+      "fix_diff_sha256": "5ef0a13d8200b9afeb43952161c62218bf5fa971821bd16fd05c7e4c44c98ee8",
+      "has_python_regression_test": true,
+      "needle": "return build_project_graph().compile(",
+      "primary_path": "graph_project.py",
+      "public_url": "https://github.com/Romeromarcov/fabrica-software/pull/99",
+      "pull_request": 99,
+      "repository": "Romeromarcov/fabrica-software",
+      "risk_case_id": "python-public-fabrica-empty-static-interrupt-99-regression",
+      "severity": "medium",
+      "slug": "fabrica-empty-static-interrupt",
+      "summary": "A static pre-node interrupt emits an empty payload that the approval loop later indexes at zero.",
+      "title": "fix(project): Project Loop no crashea en aprobación de roadmap (IndexError langgraph 1.x)"
+    }
+  ],
+  "selection_policy": {
+    "execution_policy": "each case requires an immutable full-source Git worktree at the exact PR base or head SHA",
+    "language": "Python production changes",
+    "model_independence": "selection and labels frozen before the final EvoAgent run",
+    "sampling_frame": "repositories absent from the frozen 50-repository benchmark",
+    "sampling_seed": 20260905,
+    "shared_exclusions": [
+      "documentation, dependency, formatting, and security-domain changes",
+      "repository names explicitly identifying dummy, bug-test, or sample data",
+      "no unambiguous changed risk line after mechanical fix reversal",
+      "multiple unrelated production behavior changes"
+    ],
+    "source": "merged public GitHub pull requests",
+    "tier_1": "exactly one production Python file and at most 120 added/deleted lines",
+    "tier_2": "exactly two production Python files and at most 120 added/deleted lines; retain only files causally tied to the target defect"
+  }
+}

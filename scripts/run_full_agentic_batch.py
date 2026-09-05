@@ -4,6 +4,7 @@ from collections import Counter
 import hashlib
 import json
 import os
+import subprocess
 import sys
 import time
 
@@ -46,6 +47,55 @@ def select_cases(cases: list, limit: int) -> list:
             if buckets[key] and len(selected) < limit:
                 selected.append(buckets[key].pop(0))
     return selected
+
+
+def expected_repository_sha(case: dict) -> str:
+    source = case.get("source") or {}
+    if source.get("kind") == "public-security-fix-reversal":
+        return str(source.get("vulnerable_base_sha") or "").strip()
+    if source.get("direction") == "fix-reversal-regression":
+        return str(source.get("base_sha") or "").strip()
+    return str(source.get("head_sha") or source.get("fixed_head_sha") or "").strip()
+
+
+def require_repository_context(cases: list) -> dict:
+    """Fail the entire batch before model calls unless every case is a full checkout."""
+    repositories = set()
+    tracked_counts = []
+    for case in cases:
+        root = os.path.abspath(str(case.get("repository_root") or ""))
+        if not root or not os.path.isdir(root):
+            raise ValueError("case %s has no repository checkout" % case["id"])
+        head = subprocess.run(
+            ["git", "-c", "safe.directory=*", "-C", root, "rev-parse", "HEAD"],
+            capture_output=True, text=True, encoding="utf-8", errors="replace",
+            timeout=20, check=False,
+        )
+        if head.returncode != 0:
+            raise ValueError("case %s repository_root is not a Git worktree" % case["id"])
+        expected = expected_repository_sha(case)
+        actual = head.stdout.strip().lower()
+        if expected and actual != expected.lower():
+            raise ValueError(
+                "case %s checkout HEAD %s != expected %s"
+                % (case["id"], actual, expected)
+            )
+        files = subprocess.run(
+            ["git", "-c", "safe.directory=*", "-C", root, "ls-files"],
+            capture_output=True, text=True, encoding="utf-8", errors="replace",
+            timeout=30, check=False,
+        )
+        tracked = len([line for line in files.stdout.splitlines() if line.strip()])
+        if files.returncode != 0 or tracked < 2:
+            raise ValueError("case %s checkout is not a populated repository" % case["id"])
+        repositories.add(case["repository"].lower())
+        tracked_counts.append(tracked)
+    return {
+        "cases": len(cases),
+        "repositories": len(repositories),
+        "minimum_tracked_files": min(tracked_counts),
+        "maximum_tracked_files": max(tracked_counts),
+    }
 
 
 def load_results(path: str, allowed_ids: set, include_failures: bool = False) -> dict:
@@ -205,6 +255,13 @@ def main() -> None:
         help="Fail instead of calling the model when any selected case is absent from cache.",
     )
     parser.add_argument(
+        "--require-repository-context", action="store_true",
+        help=(
+            "Before any model call, require every selected case to reference a "
+            "populated Git worktree at its exact expected base/head commit."
+        ),
+    )
+    parser.add_argument(
         "--suggestion-judgments", default="",
         help="Optional required/optional/invalid/duplicate adjudication JSON.",
     )
@@ -244,6 +301,17 @@ def main() -> None:
         selected = [case for case in cases if case["id"] in requested][:args.max_cases]
     else:
         selected = select_cases(cases, args.max_cases)
+    if args.require_repository_context:
+        readiness = require_repository_context(selected)
+        print(
+            "REPOSITORY_CONTEXT cases=%d repositories=%d tracked_files=%d..%d"
+            % (
+                readiness["cases"], readiness["repositories"],
+                readiness["minimum_tracked_files"],
+                readiness["maximum_tracked_files"],
+            ),
+            flush=True,
+        )
     allowed_ids = {case["id"] for case in selected}
     output = os.path.abspath(args.output)
     completed = load_results(output, allowed_ids)
