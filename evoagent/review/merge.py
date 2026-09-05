@@ -824,6 +824,21 @@ def merge_findings(findings: Iterable[Finding]) -> List[Finding]:
             )
         ):
             if current is not None:
+                # Once both claims independently passed publication, keep the
+                # Worker's richer explanation but retain the scanner's stable
+                # taxonomy. The model-authored label remains auditable instead
+                # of overwriting the deterministic rule identity during final
+                # deduplication. This never promotes an unreviewed Worker claim:
+                # mixed-source merging happens only on the published set.
+                if (
+                    is_deterministic_finding(current)
+                    and not is_deterministic_finding(finding)
+                    and not is_validated_agent_skill_finding(finding)
+                    and finding.rule_id != current.rule_id
+                ):
+                    if not finding.original_rule_id:
+                        finding.original_rule_id = finding.rule_id
+                    finding.rule_id = current.rule_id
                 known = {
                     str(item.get("evidence_id")) for item in finding.evidence_refs
                     if isinstance(item, dict)

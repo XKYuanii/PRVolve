@@ -130,7 +130,10 @@ class PublicationArbitrationTests(unittest.TestCase):
         self.assertEqual([], published)
 
     def test_confirmed_worker_and_scanner_deduplicate_after_review(self):
-        scanner = replace(self.finding, source="local-rule-scanner")
+        scanner = replace(
+            self.finding, rule_id="COR-MISSING-MAPPING-GUARD",
+            source="local-rule-scanner",
+        )
         self.finding.evidence_refs = [self.fact]
         candidates = candidates_from([scanner], {"worker": {"findings": [self.finding.to_dict()]}})
         proof = {"finding_index": 1, "publication_ready": True, **dict.fromkeys((
@@ -140,6 +143,8 @@ class PublicationArbitrationTests(unittest.TestCase):
         published, _, _ = partition_publication([scanner], candidates, [candidates[1]], [proof], True)
         self.assertEqual(1, len(published))
         self.assertEqual("security", published[0].source)
+        self.assertEqual("COR-MISSING-MAPPING-GUARD", published[0].rule_id)
+        self.assertEqual("CWE-248", published[0].original_rule_id)
 
     def test_unpublished_scanner_is_not_counted_as_publication_rescue(self):
         result = {"predicted_findings": []}
