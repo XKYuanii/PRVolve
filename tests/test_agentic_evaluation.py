@@ -8,7 +8,9 @@ from evoagent.agents.parsing import (
     normalize_model_rule_id, parse_findings, worker_final_validation_error,
 )
 from evoagent.review.agentic import AgenticReviewer
-from evoagent.review.merge import apply_critic, merge_findings, normalize_delegations
+from evoagent.review.merge import (
+    apply_critic, merge_findings, normalize_delegations, partition_publication,
+)
 from evoagent.review.preflight import repository_preflight
 from evoagent.eval.benchmark import ContextRuleReviewer
 from evoagent.eval.harness import one_to_one_match
@@ -133,6 +135,21 @@ class FakeClient:
 
 
 class AgenticEvaluationTests(unittest.TestCase):
+    @staticmethod
+    def _causal_delta():
+        return {
+            "trigger": "A supported input reaches the changed call.",
+            "before": "The old branch handled the input.",
+            "after": "The new branch passes it to the failing operation.",
+            "failure": "The operation raises instead of returning a result.",
+            "contract": "The existing caller expects a result for this input.",
+            "premises": [{
+                "premise": "The supported input reaches this branch.",
+                "status": "verified",
+                "evidence": "Repository source shows the caller and branch.",
+            }],
+        }
+
     def test_critic_protocol_failure_fails_closed_without_failing_review(self):
         class FailingCritic:
             @staticmethod
@@ -903,6 +920,7 @@ class AgenticEvaluationTests(unittest.TestCase):
                 "evidence_sufficient": True,
                 "would_comment_on_real_pr": True,
                 "confidence_adjustment": -0.05,
+                "causal_delta": self._causal_delta(),
             }],
             "_observations": [],
         }
@@ -914,6 +932,36 @@ class AgenticEvaluationTests(unittest.TestCase):
         self.assertEqual(0.8, candidates[0].confidence)
         self.assertEqual(-0.05, decisions[0]["recommended_confidence_adjustment"])
         self.assertTrue(decisions[0]["publication_ready"])
+
+    def test_critic_boolean_verdict_without_causal_proof_fails_closed(self):
+        candidate = Finding(
+            rule_id="CWE-703", severity=Severity.MEDIUM,
+            title="Missing directory escapes", explanation="The error propagates.",
+            path="app.py", line=10, evidence="with os.scandir(path):",
+            fix="Catch FileNotFoundError.", test="Cover a missing directory.",
+            confidence=0.9, source="correctness-reliability",
+        )
+        result = {
+            "decisions": [{
+                "finding_index": 0, "accepted": True,
+                "introduced_by_diff": True, "reproducible": True,
+                "evidence_sufficient": True,
+                "would_comment_on_real_pr": True, "objections": [],
+            }],
+            "_observations": [],
+        }
+
+        _candidates, decisions = apply_critic(result, [candidate])
+
+        self.assertFalse(decisions[0]["publication_ready"])
+        self.assertIn(
+            "critic omitted a complete before/after causal proof",
+            decisions[0]["objections"],
+        )
+        self.assertIn(
+            "critic did not verify the premises used by the causal proof",
+            decisions[0]["objections"],
+        )
 
     def test_critic_cannot_accept_while_reporting_blocking_objections(self):
         candidate = Finding(
@@ -956,6 +1004,7 @@ class AgenticEvaluationTests(unittest.TestCase):
                 "evidence_sufficient": True,
                 "would_comment_on_real_pr": True, "objections": [],
                 "corrected_rule_id": "CWE-682",
+                "causal_delta": self._causal_delta(),
             }],
             "_observations": [],
         }
@@ -1044,9 +1093,49 @@ class AgenticEvaluationTests(unittest.TestCase):
         ])
 
         self.assertEqual(2, len(merged))
-        scanner_result = next(item for item in merged if item.source == "local-rule-scanner")
-        self.assertEqual("COR-MISSING-MAPPING-GUARD", scanner_result.rule_id)
+        scanner_result = next(
+            item for item in merged
+            if item.rule_id == "COR-MISSING-MAPPING-GUARD"
+        )
+        self.assertEqual("correctness-reliability", scanner_result.source)
+        self.assertTrue(any(
+            ref.get("tool") == "local-rule-scanner"
+            for ref in scanner_result.evidence_refs
+        ))
         self.assertIn("CWE-798", {item.rule_id for item in merged})
+
+    def test_scanner_corroboration_does_not_bypass_worker_semantic_review(self):
+        scanner_ref = {
+            "evidence_id": "local-rule:guard", "tool": "local-rule-scanner",
+        }
+        scanner = Finding(
+            rule_id="COR-MISSING-MAPPING-GUARD", severity=Severity.MEDIUM,
+            title="Missing mapping guard", explanation="A missing key raises.",
+            path="app.py", line=7, evidence="value['key']",
+            evidence_refs=[scanner_ref], fix="Guard access.",
+            test="Omit the key.", confidence=0.98, source="local-rule-scanner",
+        )
+        worker = Finding(
+            rule_id="COR-MISSING-MAPPING-GUARD", severity=Severity.MEDIUM,
+            title="Mapped value is required", explanation="The caller may omit key.",
+            path="app.py", line=7, evidence="value['key']",
+            evidence_refs=[{
+                "evidence_id": "read_file:caller", "tool": "read_file",
+                "output": {"path": "app.py", "content": "value['key']"},
+            }], fix="Guard access.", test="Omit the key.",
+            confidence=0.8, source="correctness-reliability",
+        )
+        candidates = merge_findings([scanner, worker])
+
+        published, _suggestions, decisions = partition_publication(
+            [scanner], candidates, [],
+            [{"finding_index": 0, "publication_ready": False}],
+            repository_available=True,
+        )
+
+        self.assertEqual("correctness-reliability", candidates[0].source)
+        self.assertEqual([], published)
+        self.assertEqual("rejected", decisions[0]["disposition"])
 
     def test_failed_closed_critic_does_not_erase_the_safe_review(self):
         reviewer = ProductArmReviewer.__new__(ProductArmReviewer)
@@ -2212,7 +2301,7 @@ class AgenticEvaluationTests(unittest.TestCase):
 
     def test_agentic_arms_share_stable_rules_and_real_role_topologies(self):
         self.assertEqual(
-            22,
+            21,
             len(LocalRuleReviewer.RULES)
             + len(LocalRuleReviewer.DIFF_RULES)
             + len(ContextRuleReviewer.RULES),
@@ -2236,7 +2325,7 @@ class AgenticEvaluationTests(unittest.TestCase):
             for item in execution["model_call_log"]:
                 actual[item["role"]] = actual.get(item["role"], 0) + 1
             self.assertEqual(calls, actual)
-            self.assertEqual(22, reviewer.evaluation_config()["deterministic_rules"])
+            self.assertEqual(21, reviewer.evaluation_config()["deterministic_rules"])
             self.assertFalse(
                 reviewer.evaluation_config()["scanner_findings_seed_agents"]
             )

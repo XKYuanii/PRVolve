@@ -143,15 +143,6 @@ class LocalRuleReviewer(Reviewer):
             "仅捕获可处理的异常，记录必要上下文，并让不可恢复错误向上传播。",
             "加入依赖失败测试，断言错误可观察且不会返回伪成功。",
         ),
-        (
-            "REL-DEBUG-PRINT",
-            Severity.LOW,
-            re.compile(r"\b(print\s*\(|console\.log\s*\()"),
-            "新增调试输出",
-            "直接输出可能污染服务日志或意外暴露运行数据。",
-            "删除调试输出，或改用带级别和脱敏策略的结构化日志。",
-            "验证正常请求不会产生包含敏感值的非预期输出。",
-        ),
     ]
 
     # Cross-line guards intentionally stay small and high-signal. They cover
@@ -754,7 +745,7 @@ class SecurityRuleReviewer(DomainRuleReviewer):
 class ReliabilityRuleReviewer(DomainRuleReviewer):
     name = "reliability-agent"
     domains = ("reliability", "correctness", "regression")
-    rule_ids = frozenset({"REL-EMPTY-EXCEPT", "REL-DEBUG-PRINT"})
+    rule_ids = frozenset({"REL-EMPTY-EXCEPT"})
 
 
 class OpenAICompatibleReviewer(Reviewer):

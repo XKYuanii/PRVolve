@@ -179,6 +179,57 @@ def candidates_from(rule_findings, worker_results):
     return merge_findings(findings)
 
 
+def _critic_proof_status(decision):
+    """Validate the Critic's compact causal proof for an accepted finding.
+
+    Boolean verdicts alone are too easy to assert without comparing the old
+    and new behavior.  Keep the proof deliberately small, but require the
+    Critic to make the trigger, behavioral delta, failure and governing
+    contract explicit, then verify every premise it relied on.
+    """
+    proof = decision.get("causal_delta") if isinstance(decision, dict) else None
+    if not isinstance(proof, dict):
+        return False, False, {}
+
+    def statement(name):
+        return str(proof.get(name) or "").strip()
+
+    trigger = statement("trigger")
+    before = statement("before")
+    after = statement("after")
+    failure = statement("failure")
+    contract = statement("contract")
+    differential = bool(
+        trigger and before and after and failure and contract
+        and " ".join(before.lower().split()) != " ".join(after.lower().split())
+    )
+
+    premises = proof.get("premises") or []
+    premises_verified = bool(premises) and all(
+        isinstance(item, dict)
+        and str(item.get("premise") or "").strip()
+        and str(item.get("evidence") or "").strip()
+        and str(item.get("status") or "").strip().lower() == "verified"
+        for item in premises
+    )
+    normalized = {
+        "trigger": trigger[:1000],
+        "before": before[:1000],
+        "after": after[:1000],
+        "failure": failure[:1000],
+        "contract": contract[:1000],
+        "premises": [
+            {
+                "premise": str(item.get("premise") or "")[:1000],
+                "status": str(item.get("status") or "")[:40],
+                "evidence": str(item.get("evidence") or "")[:1000],
+            }
+            for item in premises if isinstance(item, dict)
+        ][:8],
+    }
+    return differential, premises_verified, normalized
+
+
 def apply_critic(result, candidates):
     evidence = collect_evidence(result.get("_observations") or [])
     by_index = {
@@ -194,6 +245,18 @@ def apply_critic(result, candidates):
             for value in (decision or {}).get("objections") or []
             if str(value).strip()
         ]
+        differential, premises_verified, causal_delta = _critic_proof_status(
+            decision or {}
+        )
+        if decision and decision.get("accepted") and not objections:
+            if not differential:
+                objections.append(
+                    "critic omitted a complete before/after causal proof"
+                )
+            if not premises_verified:
+                objections.append(
+                    "critic did not verify the premises used by the causal proof"
+                )
         # ``objections`` is the Critic's list of blocking reasons.  Treating a
         # response as accepted while that list is non-empty made the structured
         # verdict contradict its own explanation and could leak false positives.
@@ -205,6 +268,10 @@ def apply_critic(result, candidates):
                 "evidence_sufficient", "would_comment_on_real_pr",
             )
         }
+        verification.update({
+            "differential_causality": differential,
+            "premises_verified": premises_verified,
+        })
         publication_ready = accepted and all(verification.values())
         corrected_rule_id = ""
         # Deterministic scanners own their stable rule identity.  A Critic may
@@ -241,6 +308,7 @@ def apply_critic(result, candidates):
             "recommended_confidence_adjustment": recommended_adjustment,
             "corrected_rule_id": corrected_rule_id,
             **verification,
+            "causal_delta": causal_delta,
             "objections": objections if decision else [
                 "critic returned no explicit decision"
             ],
@@ -276,14 +344,35 @@ def partition_publication(
     repository_available, critic_required=True,
     publish_unverified_suggestions=True,
 ):
-    """Protect deterministic findings and quarantine unverified LLM discoveries."""
+    """Protect scanner-only findings and verify corroborated model discoveries.
+
+    A scanner hit that overlaps a Worker claim is evidence for that claim, not
+    permission to bypass semantic review.  Only scanner-only findings retain
+    the protected deterministic baseline behavior.
+    """
     lead_identities = {finding_identity(item) for item in lead_accepted}
     critic_by_index = {
         int(item.get("finding_index")): item
         for item in critic_decisions or []
         if isinstance(item, dict) and str(item.get("finding_index", "")).isdigit()
     }
-    published = list(rule_findings)
+    corroborating_scanner_evidence = {
+        str(ref.get("evidence_id"))
+        for finding in candidates if not is_deterministic_finding(finding)
+        for ref in finding.evidence_refs if isinstance(ref, dict)
+        and str(ref.get("tool") or "") in {
+            "local-rule-scanner", "declarative-scanner",
+        }
+        and str(ref.get("evidence_id") or "")
+    }
+    published = [
+        finding for finding in rule_findings
+        if not corroborating_scanner_evidence.intersection({
+            str(ref.get("evidence_id"))
+            for ref in finding.evidence_refs if isinstance(ref, dict)
+            and str(ref.get("evidence_id") or "")
+        })
+    ]
     suggestions = []
     decisions = []
     for index, finding in enumerate(candidates):
@@ -321,6 +410,12 @@ def partition_publication(
             reasons.append("Critic did not complete all publication checks")
         repository_refs = repository_evidence_refs(finding)
         claim_refs = claim_specific_high_risk_evidence_refs(finding)
+        scanner_refs = [
+            ref for ref in finding.evidence_refs if isinstance(ref, dict)
+            and str(ref.get("tool") or "") in {
+                "local-rule-scanner", "declarative-scanner",
+            }
+        ]
         severity_adjustment = {}
         critic_ready = bool(
             not critic_required or critic.get("publication_ready")
@@ -331,7 +426,11 @@ def partition_publication(
             and all(critic.get(key) is True for key in (
                 "introduced_by_diff", "reproducible",
                 "evidence_sufficient", "would_comment_on_real_pr",
+                "differential_causality", "premises_verified",
             ))
+        )
+        proof_backed_scanner = bool(
+            scanner_refs and critic_fully_verified
         )
         impact_claim = " ".join((
             finding.title, finding.explanation, finding.evidence,
@@ -359,9 +458,9 @@ def partition_publication(
                     "is not supported by concrete outage, data-loss, or corruption evidence"
                 ),
             }
-        if not repository_available and not claim_refs:
+        if not repository_available and not claim_refs and not proof_backed_scanner:
             reasons.append("repository context is unavailable")
-        if not repository_refs:
+        if not repository_refs and not proof_backed_scanner:
             reasons.append("no repository-backed tool evidence")
         if finding.severity == Severity.LOW:
             reasons.append(
@@ -372,9 +471,10 @@ def partition_publication(
         # repository facts, do not make that stale estimate override the
         # evidence verdict.  A bare publication_ready flag is intentionally
         # insufficient so integrations cannot bypass the detailed checks.
-        confidence_threshold = 0.7 if (
-            claim_refs or (critic_fully_verified and repository_refs)
-        ) else 0.8
+        confidence_threshold = (
+            0.55 if critic_fully_verified and (repository_refs or scanner_refs)
+            else 0.7 if claim_refs else 0.8
+        )
         if finding.confidence + 1e-9 < confidence_threshold:
             reasons.append(
                 "model confidence below stable publication threshold %.2f"
@@ -411,7 +511,7 @@ def partition_publication(
             )
         if (
             finding.severity in {Severity.CRITICAL, Severity.HIGH}
-            and not claim_refs
+            and not claim_refs and not proof_backed_scanner
         ):
             reasons.append(
                 "high-risk claim lacks behavioral or cross-call evidence"
@@ -426,6 +526,7 @@ def partition_publication(
                 ),
                 "repository_evidence_count": len(repository_refs),
                 "claim_specific_evidence_count": len(claim_refs),
+                "scanner_corroborated": bool(scanner_refs),
                 "publication_partition_passed": True,
             }
             published.append(finding)
@@ -496,10 +597,9 @@ def merge_findings(findings: Iterable[Finding]) -> List[Finding]:
         (item.path, item.line, item.rule_id)
         for item in findings if is_deterministic_finding(item)
     }
-    # Let an exact Worker confirmation enrich its scanner candidate before a
-    # taxonomy variant is considered.  This makes the result independent of
-    # Worker completion order and gives semantic-probe deduplication a shared
-    # behavioral identity to work with.
+    # Group an exact Worker confirmation with its scanner signal before a
+    # taxonomy variant is considered.  The Worker will own the merged semantic
+    # claim below; the scanner reference remains attached as corroboration.
     findings.sort(key=lambda item: (
         0 if is_deterministic_finding(item)
         else 1 if (item.path, item.line, item.rule_id) in deterministic_keys
@@ -566,8 +666,15 @@ def merge_findings(findings: Iterable[Finding]) -> List[Finding]:
                     "cor", "sec", "rel", "rule", "guard", "access",
                     "semantics",
                 })
+                existing_has_scanner_evidence = any(
+                    isinstance(item, dict)
+                    and str(item.get("tool") or "") in {
+                        "local-rule-scanner", "declarative-scanner",
+                    }
+                    for item in existing.evidence_refs
+                )
                 same_scanner_mechanism = bool(
-                    is_deterministic_finding(existing)
+                    (is_deterministic_finding(existing) or existing_has_scanner_evidence)
                     and existing.line == finding.line
                     and same_quoted_code
                     and rule_tokens.intersection(claim_tokens)
@@ -585,13 +692,13 @@ def merge_findings(findings: Iterable[Finding]) -> List[Finding]:
                     break
         current = merged.get(key)
         priority = (
-            2 if is_deterministic_finding(finding)
-            else 1 if is_validated_agent_skill_finding(finding) else 0
+            2 if is_validated_agent_skill_finding(finding)
+            else 0 if is_deterministic_finding(finding) else 1
         )
         current_priority = (
-            2 if current is not None and is_deterministic_finding(current)
-            else 1 if current is not None and is_validated_agent_skill_finding(current)
-            else 0
+            2 if current is not None and is_validated_agent_skill_finding(current)
+            else 0 if current is not None and is_deterministic_finding(current)
+            else 1
         )
         claim_supported = bool(
             claim_specific_high_risk_evidence_refs(finding)

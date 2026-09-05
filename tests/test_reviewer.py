@@ -38,9 +38,7 @@ class LocalReviewerTests(unittest.TestCase):
 
         findings = LocalRuleReviewer().review(diff, parse_unified_diff(diff))
 
-        self.assertEqual(1, len(findings))
-        self.assertEqual("app.py", findings[0].path)
-        self.assertEqual("REL-DEBUG-PRINT", findings[0].rule_id)
+        self.assertEqual([], findings)
 
     def test_empty_except_rule_requires_a_pass_body(self):
         swallowed = (

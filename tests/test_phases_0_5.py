@@ -83,7 +83,21 @@ class FakeChatClient:
         if role == "critic":
             return {"action": "final", "decisions": [{
                 "finding_index": 0, "accepted": True, "objections": [],
+                "introduced_by_diff": True, "reproducible": True,
+                "evidence_sufficient": True, "would_comment_on_real_pr": True,
                 "confidence_adjustment": 0.0,
+                "causal_delta": {
+                    "trigger": "User-controlled input reaches eval.",
+                    "before": "The old code did not execute the input.",
+                    "after": "The added eval executes the input.",
+                    "failure": "An attacker can execute arbitrary code.",
+                    "contract": "Untrusted input must remain data.",
+                    "premises": [{
+                        "premise": "The eval argument is user-controlled.",
+                        "status": "verified",
+                        "evidence": "The changed expression is eval(user_input).",
+                    }],
+                },
             }]}
         if role == "evolution-root-cause":
             return {

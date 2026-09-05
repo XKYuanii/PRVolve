@@ -154,6 +154,12 @@ establishes the resulting exception or wrong value. Conversely, a semantic probe
 the operation; it does not prove repository reachability. State which proof obligation is missing.
 For replacements, require the candidate evidence to distinguish old and new behavior and to support
 the candidate's specific mechanism; do not treat proof of a neighboring failure as proof of the claim.
+For every accepted candidate, return a compact causal_delta object. It must state the same allowed
+trigger, behavior before the patch, behavior after the patch, concrete failure, and the pre-existing
+contract or invariant that makes the new outcome defective. List each material type, shape, nullability,
+configuration, reachability or ownership premise under premises with status=verified and the repository
+fact that verifies it. If any of those fields cannot be established, reject the candidate and name the
+missing proof in objections. Do not copy the candidate's conclusion as its own proof.
 Tests and documentation added or modified by the same PR are part of the proposition under review, not
 independent proof that the behavior is correct: they may encode the same regression. Do not reject solely
 because a new test asserts the behavior or a new doc describes it; require a pre-existing contract or other
@@ -169,7 +175,11 @@ Return JSON only. Tool action: {"action":"tool","tool":"name","arguments":{},"re
 Final action: {"action":"final","decisions":[{"finding_index":0,"accepted":true,
 "introduced_by_diff":true,"reproducible":true,"evidence_sufficient":true,
 "would_comment_on_real_pr":true,"objections":[],"confidence_adjustment":0.0,
-"corrected_rule_id":"CWE-ID","supporting_evidence_ids":["tool:id"]}]}"""
+"corrected_rule_id":"CWE-ID","supporting_evidence_ids":["tool:id"],
+"causal_delta":{"trigger":"same supported input/configuration","before":"old behavior",
+"after":"new behavior","failure":"exception or wrong result","contract":"pre-existing contract",
+"premises":[{"premise":"required type/reachability fact","status":"verified",
+"evidence":"repository fact or deterministic runtime rule"}]}}]}"""
 
 RULE_ID_GUIDANCE = (
     "\nRule IDs: reuse a scanner ID; else use CWE-ID or a descriptive ID, never SEC-001. "

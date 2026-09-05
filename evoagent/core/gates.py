@@ -71,6 +71,11 @@ class FindingGate:
                 and prior_gate.get("lead_selected")
                 and prior_gate.get("critic_publication_ready")
                 and prior_gate.get("publication_partition_passed")
+            ) or bool(
+                prior_gate.get("scanner_corroborated")
+                and prior_gate.get("lead_selected")
+                and prior_gate.get("critic_publication_ready")
+                and prior_gate.get("publication_partition_passed")
             )
             trusted_source = (
                 is_deterministic_finding(finding)

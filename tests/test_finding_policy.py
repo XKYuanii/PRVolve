@@ -256,9 +256,9 @@ class FindingPolicyTests(unittest.TestCase):
             decisions[0]["reasons"],
         )
 
-    def test_fully_verified_critic_can_publish_evidence_backed_point_seven(self):
+    def test_fully_verified_critic_can_publish_evidence_backed_point_six(self):
         candidate = finding(source="correctness-reliability")
-        candidate.confidence = 0.7
+        candidate.confidence = 0.6
         candidate.evidence_refs = [{
             "evidence_id": "read_file:proof",
             "tool": "read_file",
@@ -276,6 +276,8 @@ class FindingPolicyTests(unittest.TestCase):
             "reproducible": True,
             "evidence_sufficient": True,
             "would_comment_on_real_pr": True,
+            "differential_causality": True,
+            "premises_verified": True,
         }
 
         published, suggestions, decisions = partition_publication(
