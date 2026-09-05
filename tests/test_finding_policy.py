@@ -256,9 +256,9 @@ class FindingPolicyTests(unittest.TestCase):
             decisions[0]["reasons"],
         )
 
-    def test_fully_verified_critic_can_publish_evidence_backed_point_six(self):
+    def test_fully_verified_critic_proof_supersedes_stale_worker_confidence(self):
         candidate = finding(source="correctness-reliability")
-        candidate.confidence = 0.6
+        candidate.confidence = 0.05
         candidate.evidence_refs = [{
             "evidence_id": "read_file:proof",
             "tool": "read_file",
@@ -288,6 +288,14 @@ class FindingPolicyTests(unittest.TestCase):
         self.assertEqual([candidate], published)
         self.assertEqual([], suggestions)
         self.assertEqual("confirmed", decisions[0]["disposition"])
+        self.assertTrue(
+            candidate.gate["verified_proof_supersedes_confidence"]
+        )
+        gated = FindingGate().apply(
+            published, parse_unified_diff(DIFF)
+        )
+        self.assertEqual([candidate], gated.accepted)
+        self.assertEqual(0, gated.checks["confidence"]["rejected"])
 
     def test_bare_critic_ready_flag_does_not_lower_confidence_threshold(self):
         candidate = finding(source="correctness-reliability")

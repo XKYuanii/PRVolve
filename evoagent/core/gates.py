@@ -94,7 +94,10 @@ class FindingGate:
                     "evidence gate: high-risk finding requires verified scanner or tool evidence"
                 )
                 counters["evidence"] += 1
-            if finding.confidence < self.minimum_confidence:
+            if (
+                finding.confidence < self.minimum_confidence
+                and not prior_gate.get("verified_proof_supersedes_confidence")
+            ):
                 reasons.append("confidence gate: score below %.2f" % self.minimum_confidence)
                 counters["confidence"] += 1
             if finding.severity in {Severity.CRITICAL, Severity.HIGH} and (

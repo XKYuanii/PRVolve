@@ -566,12 +566,15 @@ def partition_publication(
                 "low-severity model finding remains advisory"
             )
         # The Worker's confidence is an early estimate.  Once an independent
-        # Critic explicitly verifies all four publication obligations against
+        # Critic explicitly verifies every publication obligation against
         # repository facts, do not make that stale estimate override the
         # evidence verdict.  A bare publication_ready flag is intentionally
         # insufficient so integrations cannot bypass the detailed checks.
+        verified_proof_supersedes_confidence = bool(
+            lead_selected and (proof_backed_review or proof_backed_scanner)
+        )
         confidence_threshold = (
-            0.55 if critic_fully_verified and (repository_refs or scanner_refs)
+            0.0 if verified_proof_supersedes_confidence
             else 0.7 if claim_refs else 0.8
         )
         if finding.confidence + 1e-9 < confidence_threshold:
@@ -628,6 +631,9 @@ def partition_publication(
                 "claim_specific_evidence_count": len(claim_refs),
                 "scanner_corroborated": bool(scanner_refs),
                 "causal_proof_verified": proof_backed_review,
+                "verified_proof_supersedes_confidence": (
+                    verified_proof_supersedes_confidence
+                ),
                 "publication_partition_passed": True,
             }
             published.append(finding)
