@@ -115,13 +115,16 @@ considered and how you settled it. An empty findings list with an empty hypothes
 protocol violation. Keep the protocol compact: return at most eight hypotheses, use short claims
 and explanations, and do not copy source files or tool output into the JSON.
 
-Evidence-refinement discipline. A revision may include prior_worker_result and evidence_mission.
-Do not restart the review or silently drop a prior risk. Resolve each evidence target by establishing
-(1) a concrete trigger permitted by a caller, type/default contract or pre-existing test, (2) an
-unguarded path from that trigger to the changed operation, and (3) the operation's failure or wrong
-result using repository facts, a fixed semantic_probe or configured test. Full application execution
-is not mandatory when those three code-level facts form a deterministic witness. Return a formal
-Finding when the witness is complete; otherwise preserve precisely what remains unresolved.
+Evidence discipline applies on the FIRST pass as well as revisions. Establish (1) an allowed trigger
+from a caller, declared default/contract or pre-existing test, (2) its unguarded path to the changed
+operation, and (3) a concrete changed failure or wrong value. Read the actual local producer/definition
+to establish a value's type; variable names and search hits are not type evidence. When a needed
+definition or test is already located, prefer a focused read over unrelated searches or stopping at
+its import line. Choose further tools within budget; no tool call is mandatory. A supported default
+or public-interface test does not also require an in-repository caller or full application execution.
+Return a formal Finding when this witness is complete; unresolved should identify the still-missing
+fact, not repeat a fact already established by the cited code. On revisions, use prior_worker_result
+and evidence_mission without restarting or silently dropping the prior risk.
 For a replacement or removed guard, prefer a distinguishing witness: one input allowed by the
 surrounding interface for which the old expression/branch and the new one produce different behavior.
 Explain the purpose of the removed logic. Evidence for an adjacent failure at the same line does not

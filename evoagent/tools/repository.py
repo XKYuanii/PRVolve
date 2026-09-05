@@ -90,10 +90,17 @@ class RepositoryToolSuite:
             "truncated": len(files) >= min(int(limit), 2000),
         })
 
-    def search_repository(self, query: str, limit: int = 50) -> dict:
+    def search_repository(
+        self, query: str, limit: int = 50, context_path: str = "", identifier: bool = False,
+    ) -> dict:
         query = str(query).strip()
         if not query:
             raise ValueError("query is required")
+        if identifier and not re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", query):
+            raise ValueError("identifier search requires one code identifier")
+        pattern = re.compile(r"(?<!\w)%s(?!\w)" % re.escape(query)) if identifier else None
+        context_path = str(context_path).replace("\\", "/")
+        context_dir = context_path.rpartition("/")[0]
         hits = []
         source_suffixes = (
             ".py", ".pyi", ".js", ".jsx", ".ts", ".tsx", ".java", ".kt",
@@ -102,13 +109,17 @@ class RepositoryToolSuite:
         # Search source before docs so bounded results expose code contracts.
         files = sorted(
             self._files(),
-            key=lambda value: (not value.lower().endswith(source_suffixes), value),
+            key=lambda value: (
+                value != context_path,
+                not (context_dir and value.startswith(context_dir + "/")),
+                not value.lower().endswith(source_suffixes), value,
+            ),
         )
         for relative in files:
             try:
                 with open(self._safe_path(relative), "r", encoding="utf-8", errors="replace") as handle:
                     for number, line in enumerate(handle, 1):
-                        if query.lower() in line.lower():
+                        if (pattern.search(line) if pattern else query.lower() in line.lower()):
                             hits.append({"path": relative, "line": number, "content": line.rstrip()[:500]})
                             if len(hits) >= max(1, min(int(limit), 200)):
                                 return _evidence("search_repository", hits)
@@ -886,8 +897,8 @@ class RepositoryToolSuite:
                 self.list_repository,
             ),
             "search_repository": (
-                "Full repository text search.",
-                {"type": "object", "properties": {"query": {"type": "string"}, "limit": {"type": "integer", "minimum": 1, "maximum": 200}}, "required": ["query"], "additionalProperties": False},
+                "Search repository text. context_path ranks local code first without restricting scope; identifier matches a case-sensitive whole code identifier.",
+                {"type": "object", "properties": {"query": {"type": "string"}, "limit": {"type": "integer", "minimum": 1, "maximum": 200}, "context_path": {"type": "string"}, "identifier": {"type": "boolean"}}, "required": ["query"], "additionalProperties": False},
                 self.search_repository,
             ),
             "search_diff": (

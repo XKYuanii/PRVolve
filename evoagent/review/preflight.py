@@ -5,7 +5,25 @@ read-only tools up front and hands the results in as observations, so the first
 model call already carries the source, tests and call sites the assignment is
 about.
 """
+import builtins
+import io
+import keyword
 import re
+import tokenize
+
+
+def code_identifiers(text):
+    """Extract identifiers from partial Python hunks, never comment/string prose."""
+    names = []
+    # Diff fragments may have incomplete blocks or newer syntax. Tokenization
+    # still gives useful names without requiring this interpreter to parse them.
+    try:
+        for token in tokenize.generate_tokens(io.StringIO(text).readline):
+            if token.type == tokenize.NAME and not keyword.iskeyword(token.string):
+                names.append(token.string)
+    except (tokenize.TokenError, IndentationError, SyntaxError):
+        pass
+    return list(dict.fromkeys(names))
 
 
 def repository_preflight(
@@ -60,7 +78,7 @@ def repository_preflight(
         "self", "true", "false", "none", "return", "import", "from",
         "else", "with", "line", "value", "result", "object", "string",
         "info", "logger", "warning", "warn",
-    }
+    } | set(dir(builtins)) | set(keyword.kwlist)
     observations = []
     selected_regions = []
     seen_regions = set()
@@ -91,16 +109,19 @@ def repository_preflight(
                     "error": str(exc)[:1000],
                 })
     queries = []
-    cross_file_hit = None
+    dependency_hits = []
     text = ""
     if selected:
         nearby = [
-            item.content for item in added
+            item.content for item in sorted(added, key=lambda item: item.line)
             if item.path == selected.path and abs(item.line - selected.line) <= 12
         ]
         text = "\n".join(nearby or [selected.content])
-        attributes = re.findall(r"\.\s*([A-Za-z_][A-Za-z0-9_]*)", text)
-        identifiers = re.findall(r"\b[A-Za-z_][A-Za-z0-9_]{3,}\b", text)
+        identifiers = code_identifiers(text)
+        attributes = [
+            name for name in re.findall(r"\.\s*([A-Za-z_][A-Za-z0-9_]*)", text)
+            if name in identifiers
+        ]
         ranked = attributes + sorted(
             identifiers,
             key=lambda value: (
@@ -117,60 +138,60 @@ def repository_preflight(
         for query in queries:
             try:
                 value = tools.invoke(
-                    "search_repository", {"query": query, "limit": 10}
+                    "search_repository", {
+                        "query": query, "limit": 10,
+                        "context_path": selected.path, "identifier": True,
+                    }
                 )
                 observations.append({
                     "step": 0, "tool": "search_repository", "ok": True,
-                    "result": value, "reason": "evidence-first semantic contract probe",
+                    "result": value, "reason": "bounded identifier and local-contract search",
                 })
                 payload = value.get("output") if isinstance(value, dict) else None
-                if cross_file_hit is None and isinstance(payload, list):
+                if isinstance(payload, list):
                     candidates = [
-                        item for item in payload
+                        {**item, "searched_identifier": query} for item in payload
                         if isinstance(item, dict)
-                        and item.get("path") != selected.path
+                        and item.get("path")
                         and not str(item.get("content", "")).lstrip().startswith(
-                            ("import ", "from ")
+                            ("import ", "from ", "#", "//")
+                        )
+                        and not any(
+                            item.get("path") == region.path
+                            and abs(int(item.get("line") or 0) - region.line) <= 25
+                            for region in selected_regions
                         )
                     ]
-                    if candidates:
-                        cross_file_hit = candidates[0]
+                    dependency_hits.extend(candidates)
             except Exception as exc:
                 observations.append({
                     "step": 0, "tool": "search_repository", "ok": False,
                     "error": str(exc)[:1000],
                 })
-    if (
-        repository_available and cross_file_hit
-        and "read_file" in tools.names()
-    ):
+    def dependency_priority(hit):
+        content = str(hit.get("content") or "").lstrip()
+        name = re.escape(hit["searched_identifier"])
+        definition = bool(re.match(r"(?:async\s+)?(?:def|class)\s+%s\b" % name, content))
+        call = bool(re.search(r"\b%s\s*\(" % name, content))
+        test = any(part in str(hit["path"]).lower() for part in ("tests/", "/test", "test_"))
+        return (0 if definition else 1 if call else 2, not test if call else False,
+                hit["path"] != selected.path,
+                str(hit["path"]), int(hit.get("line") or 0))
+
+    dependency_hit = min(dependency_hits, key=dependency_priority) if dependency_hits else None
+    if repository_available and dependency_hit and "read_file" in tools.names():
         try:
-            cross_line = max(1, int(cross_file_hit.get("line", 1)))
+            cross_line = max(1, int(dependency_hit.get("line", 1)))
             value = tools.invoke("read_file", {
-                "path": str(cross_file_hit["path"]),
-                "start_line": max(1, cross_line - 20),
-                "end_line": cross_line + 30,
+                "path": str(dependency_hit["path"]),
+                "start_line": max(1, cross_line - 5),
+                "end_line": cross_line + 65,
             })
             observations.append({
                 "step": 0, "tool": "read_file", "ok": True,
                 "result": value,
-                "reason": "evidence-first cross-file use-site context",
+                "reason": "bounded producer, definition or test body for a changed identifier",
             })
-            payload = value.get("output") if isinstance(value, dict) else None
-            content = str(payload.get("content", "")) if isinstance(payload, dict) else ""
-            declarations = re.findall(
-                r"^\s*(?:class|def|async\s+def)\s+([A-Za-z_][A-Za-z0-9_]*)",
-                content, flags=re.MULTILINE,
-            )
-            if declarations and "search_repository" in tools.names():
-                value = tools.invoke("search_repository", {
-                    "query": declarations[0], "limit": 10,
-                })
-                observations.append({
-                    "step": 0, "tool": "search_repository", "ok": True,
-                    "result": value,
-                    "reason": "evidence-first one-hop caller search",
-                })
         except Exception as exc:
             observations.append({
                 "step": 0, "tool": "read_file", "ok": False,

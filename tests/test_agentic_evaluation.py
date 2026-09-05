@@ -371,7 +371,8 @@ class AgenticEvaluationTests(unittest.TestCase):
             if name == "search_repository"
         ]
         self.assertIn("_inline_env", queries)
-        self.assertIn("MessageTemplate", queries)
+        self.assertNotIn("MessageTemplate", queries)  # no unrelated second-hop search
+        self.assertLessEqual(len(queries), 2)
         self.assertTrue(any(
             name == "read_file" and arguments["path"] == "templates/message.py"
             for name, arguments in tools.calls
