@@ -917,8 +917,6 @@ class AgenticReviewer(Reviewer):
                 finding = candidates[index]
             except (IndexError, TypeError, ValueError):
                 continue
-            if finding.severity.value not in {"high", "critical"}:
-                continue
             missing_obligations = [
                 dict(item) for item in decision.get("missing_proof") or []
                 if isinstance(item, dict)

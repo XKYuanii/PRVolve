@@ -237,7 +237,7 @@ class LeadWorkerCollaborationTests(unittest.TestCase):
 
     def test_lead_can_choose_one_exact_critic_gap_without_forcing_revision(self):
         finding = Finding(
-            rule_id="CWE-248", severity=Severity.HIGH,
+            rule_id="CWE-248", severity=Severity.MEDIUM,
             title="Missing key raises", explanation="A supported key may be absent.",
             path="app.py", line=7, evidence="value['key']",
             fix="Validate the key.", test="Pass a missing key.",
@@ -300,7 +300,7 @@ class LeadWorkerCollaborationTests(unittest.TestCase):
 
     def test_one_missing_premise_can_underlie_several_missing_obligations(self):
         finding = Finding(
-            rule_id="CWE-476", severity=Severity.HIGH,
+            rule_id="CWE-476", severity=Severity.MEDIUM,
             title="Removed guard can crash", explanation="A layer may lack mlp.",
             path="model.py", line=12, evidence="layer.mlp",
             fix="Restore the guard.", test="Use a supported layer without mlp.",
