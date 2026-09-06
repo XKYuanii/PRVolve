@@ -1,12 +1,12 @@
-# EvoReview
+# PREvolve
 
 **自进化 Agent Runtime Harness 的 PR 审查与修复智能体**
 
-EvoReview 面向研发流程中的 Pull Request，将本地规则、仓库级工具和多 Agent 协作组织成可恢复的审查链路。系统只把有位置、有证据且通过复核的结论发布为正式 Finding；证据不足的模型判断会留在 Suggestion 区等待人工确认。
+PREvolve 面向研发流程中的 Pull Request，将本地规则、仓库级工具和多 Agent 协作组织成可恢复的审查链路。系统只把有位置、有证据且通过复核的结论发布为正式 Finding；证据不足的模型判断会留在 Suggestion 区等待人工确认。
 
 它覆盖从风险发现、证据复核、安全修复、结果验证到反馈学习和版本回滚的完整闭环，同时如实记录模型调用、工具证据、降级状态和门禁结果。
 
-> EvoReview 是当前产品名称。为保持已有部署兼容，Python 包名、环境变量前缀、Docker Compose 项目组和修复分支前缀仍沿用 `evoagent` / `EVOAGENT_*`。
+> PREvolve 是当前产品名称。为保持已有部署兼容，Python 包名、环境变量前缀、Docker Compose 项目组和修复分支前缀仍沿用 `evoagent` / `EVOAGENT_*`。
 
 ## 核心能力
 
@@ -143,8 +143,8 @@ Docker 部署时，`repository_root` 必须是容器内可读路径，推荐通�
 要求 Python 3.11。下面示例使用 PowerShell：
 
 ```powershell
-git clone https://github.com/XKYuanii/EvoReview.git
-Set-Location EvoReview
+git clone https://github.com/XKYuanii/PREvolve.git
+Set-Location PREvolve
 python -m pip install -r requirements.txt
 
 $authBytes = New-Object byte[] 32
@@ -185,11 +185,11 @@ docker compose -p evoagent ps
 Invoke-RestMethod http://127.0.0.1:8080/health
 ```
 
-Compose 使用 PostgreSQL、Redis 和 EvoReview 服务，并统一归入 `evoagent` 项目组。默认只绑定本机 `8080` 端口。
+Compose 使用 PostgreSQL、Redis 和 PREvolve 服务，并统一归入 `evoagent` 项目组。默认只绑定本机 `8080` 端口。
 
 ### 其他模型端点
 
-EvoReview 支持 OpenAI Chat Completions 兼容端点：
+PREvolve 支持 OpenAI Chat Completions 兼容端点：
 
 ```powershell
 $env:EVOAGENT_LLM_PROVIDER = 'custom'
@@ -242,7 +242,7 @@ Invoke-WebRequest -Headers $headers `
 
 ## 安全修复
 
-EvoReview 包含两类修复实现：
+PREvolve 包含两类修复实现：
 
 - 在线 `/v1/tasks/{id}/fix` 在模型可用时使用 `VerifiedPatchFixer` 生成 Unified Patch，并在隔离 checkout 中执行路径边界、AST/CST、编译和管理员配置的测试门禁；未配置模型时只返回修复建议。
 - `SafeFixer` 是面向少量确定性规则的受限转换实现，当前不作为在线 `/fix` 的默认选择。
@@ -269,7 +269,7 @@ Webhook 地址为：
 https://<公网域名>/webhooks/github
 ```
 
-推荐只订阅 `Pull requests`，EvoReview 处理 `opened`、`reopened` 和 `synchronize`。Webhook 使用 HMAC-SHA256 签名验证：
+推荐只订阅 `Pull requests`，PREvolve 处理 `opened`、`reopened` 和 `synchronize`。Webhook 使用 HMAC-SHA256 签名验证：
 
 ```powershell
 $webhookBytes = New-Object byte[] 32
