@@ -63,3 +63,22 @@ Lead 动作一致性提示后的 stargazing 最终复跑见 `output/python-100-r
 协议能力已经具备，且没有以降低门禁或强制工具调用换取结果；四个静默对照没有被污染。但这组实跑不能证明“定向返工提高了 recall”，因为没有一次 `critic:*` 目标被 Lead 正式选择执行。1 个恢复的 TP 是 Worker 本轮取得了充分证据后由 Critic 直接验证，不是返工救回。
 
 剩余上限仍是复杂前提的发现与证明：候选没有形成、独立缺口超过两个，或者 Lead 判断补证价值不足时，系统会保守不发布。继续提升这部分需要更稳定的模型取证，而不应通过放松发布门禁实现。
+
+## 另一组历史漏报回归检查
+
+最终代码未再调整。另选 AutoGIS、bobobobo、godon 和 Glasshouse 四个在冻结 200 PR 报告中严格漏报、但 Worker 曾形成目标 Finding 的风险例，并配对同一 PR 的四个修复版本。
+
+报告：`output/python-100-repo-benchmark-v1/agentic/final-regression-check-4-plus-4-clean/report.json`
+
+SHA-256：`bc560e550fd915fe75ee079e7d7fb9662bab67cc37c2af08f46862c7e7cd133f`
+
+- 旧冻结结果（相同八例）：严格风险 TP 0/4、Worker 正式目标 4/4、Worker 发布目标 0/4、修复例静默 4/4。
+- 当前结果：严格风险 TP 1/4、Worker 正式目标 3/4、Worker 发布目标 1/4、修复例静默 4/4、FP 0。
+- Scanner finding 为 0；本组结果不依赖 scanner。
+- 69 次模型调用，619,039 tokens，平均每例 8.625 次、77,380 tokens。
+- 共执行五个 Worker 返工任务：Glasshouse 风险例两个、Glasshouse 修复例一个、godon 风险例一个、AutoGIS 风险例一个。Glasshouse 风险例在返工后形成并发布目标 Finding；Glasshouse 修复例的返工没有产生 Finding。
+- 这些返工均由 Worker 假设或证据交接触发，没有 `critic:*` 目标被 Lead 选择返工。
+- bobobobo 本轮没有形成正式 Finding；godon 和 AutoGIS 形成 Finding 后仍分别缺少完整 SQL 行结构、capability registry/异常可达性证明，未发布。
+- godon-fix 与 AutoGIS-fix 内部曾形成非目标候选，但均被发布链路拦截，最终四个修复例全部静默。
+
+这组定向困难样本没有显示最终误报或发布结果退化：相同样本的严格 TP 从 0 增至 1，静默仍为 4/4。不过 Worker 正式目标从 4 降至 3，仍显示模型发现阶段存在运行间波动。可选返工带来了一个恢复结果，也显著增加了调用和 token；不应从这 4 个历史漏报样本外推整体 recall。
