@@ -1,7 +1,7 @@
 import unittest
 
 from evoagent.agents.loop import collect_evidence
-from evoagent.review.merge import partition_publication
+from evoagent.review.merge import apply_critic, partition_publication
 from evoagent.core.diff_parser import parse_unified_diff
 from evoagent.core.finding_policy import normalize_rule_id
 from evoagent.core.gates import FindingGate
@@ -28,6 +28,53 @@ def finding(rule_id="MODEL-CLAIM", source="security", severity=Severity.MEDIUM):
 
 
 class FindingPolicyTests(unittest.TestCase):
+    def test_critic_keeps_evidence_per_obligation_and_names_only_missing_proof(self):
+        candidate = finding()
+        result = {"decisions": [{
+            "finding_index": 0, "accepted": False,
+            "introduced_by_diff": True, "reproducible": False,
+            "evidence_sufficient": True, "would_comment_on_real_pr": True,
+            "proof_state": [
+                {
+                    "obligation": "introduced_by_diff", "status": "verified",
+                    "supporting_evidence_ids": ["changed-line:1"],
+                },
+                {
+                    "obligation": "reproducible", "status": "missing",
+                    "required_proof": "Show that an allowed empty input reaches the call.",
+                    "supporting_evidence_ids": ["read-file:1"],
+                },
+            ],
+            "causal_delta": {
+                "trigger": "empty input", "before": "guarded return",
+                "after": "dangerous call", "failure": "exception",
+                "contract": "empty input is supported",
+                "premises": [{
+                    "premise": "the input may be empty", "status": "verified",
+                    "evidence": "the public parameter defaults to an empty value",
+                    "supporting_evidence_ids": ["read-file:1"],
+                }],
+            },
+            "objections": ["Reachability of the empty input is not established."],
+        }]}
+
+        _candidates, decisions = apply_critic(result, [candidate])
+
+        self.assertEqual(6, len(decisions[0]["proof_state"]))
+        self.assertEqual(
+            ["reproducible"],
+            [item["obligation"] for item in decisions[0]["missing_proof"]],
+        )
+        introduced = next(
+            item for item in decisions[0]["proof_state"]
+            if item["obligation"] == "introduced_by_diff"
+        )
+        self.assertEqual(["changed-line:1"], introduced["supporting_evidence_ids"])
+        self.assertEqual(
+            ["read-file:1"],
+            decisions[0]["causal_delta"]["premises"][0]["supporting_evidence_ids"],
+        )
+
     def test_known_aliases_are_canonicalized_and_generic_ids_are_bucketed(self):
         self.assertEqual(
             "SEC-PICKLE-LOAD",

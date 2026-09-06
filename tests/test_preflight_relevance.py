@@ -39,6 +39,24 @@ class PreflightRelevanceTests(unittest.TestCase):
     def test_identifiers_do_not_require_supported_ast_syntax(self):
         self.assertIn("convert_value", code_identifiers("def convert_value[T](item: T) -> T:\n"))
 
+    def test_first_pass_carries_one_exact_old_new_delta(self):
+        self.write("pkg/source.py", "result = consume(value)\n")
+
+        observations = self.preflight(
+            "pkg/source.py", 1, "result = consume(value)",
+        )
+
+        deltas = [
+            item for item in observations
+            if item["tool"] == "changed_line" and item["ok"] is True
+        ]
+        self.assertEqual(1, len(deltas))
+        self.assertEqual("old_value", deltas[0]["result"]["output"]["change"]["before"])
+        self.assertEqual(
+            "result = consume(value)",
+            deltas[0]["result"]["output"]["change"]["after"],
+        )
+
     def test_context_ranking_and_whole_identifier_do_not_change_default_text_search(self):
         self.write("aaa.py", "filenames = []\nfilename = 1\n")
         self.write("pkg/source.py", "fileName = raw\n")

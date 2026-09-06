@@ -91,6 +91,24 @@ def repository_preflight(
         if len(selected_regions) >= 3:
             break
     selected = selected_regions[0] if selected_regions else None
+    # One exact delta is enough to expose a removed guard or replacement's old
+    # semantics. Keep this bounded to the highest-risk region; Workers may ask
+    # for another changed line only when a named proof obligation requires it.
+    if repository_available and selected and "changed_line" in tools.names():
+        try:
+            value = tools.invoke("changed_line", {
+                "path": selected.path, "line": selected.line,
+            })
+            observations.append({
+                "step": 0, "tool": "changed_line", "ok": True,
+                "result": value,
+                "reason": "bounded old/new guard or operation comparison",
+            })
+        except Exception as exc:
+            observations.append({
+                "step": 0, "tool": "changed_line", "ok": False,
+                "error": str(exc)[:1000],
+            })
     if repository_available and selected_regions and "read_file" in tools.names():
         for region_item in selected_regions:
             try:

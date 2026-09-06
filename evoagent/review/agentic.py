@@ -197,14 +197,37 @@ class AgenticReviewer(Reviewer):
             revision_results: Dict[str, dict] = {}
             stop_reason = ""
             critic_objective = ""
+            pre_critic_review: Dict[str, Any] = {}
+            revision_performed = False
             for index in range(max_rounds + 1):
                 candidates = candidates_from(rule_findings, worker_results)
+                critic_preview = []
+                if (
+                    index == 0 and max_rounds > 0
+                    and "critic" in run.enabled and candidates
+                ):
+                    preview = session.runtime.run(
+                        session.sub(EXECUTING, "critic-preview"),
+                        lambda candidates=candidates: self._critic(
+                            session, run, candidates,
+                            "Identify exact missing publication premises for a possible "
+                            "targeted Worker evidence revision.",
+                            memory_context,
+                        ),
+                        "Critic is identifying candidate proof gaps",
+                    )
+                    candidates = restore_findings(preview["candidates"])
+                    critic_preview = list(preview["decisions"])
+                    pre_critic_review = {
+                        "candidates": [item.to_dict() for item in candidates],
+                        "decisions": critic_preview,
+                    }
                 assessment = session.runtime.run(
                     session.sub(EXECUTING, "assess-%d" % index),
                     lambda candidates=candidates, index=index: {
                         "decision": public_decision(self._assess(
                             session, run, delegations, worker_results, candidates,
-                            index, max_rounds, memory_context,
+                            index, max_rounds, memory_context, critic_preview,
                         ))
                     },
                     "Lead is assessing worker output (round %d)" % index,
@@ -242,6 +265,7 @@ class AgenticReviewer(Reviewer):
                     session, run, revisions, [], index + 1,
                     memory_context,
                 )
+                revision_performed = True
                 for revision in revisions:
                     key = revision["run_id"]
                     result = self._merge_worker_revision(
@@ -264,6 +288,9 @@ class AgenticReviewer(Reviewer):
                 "revision_results": revision_results,
                 "stop_reason": stop_reason or "lead-final",
                 "critic_objective": critic_objective,
+                "pre_critic_review": (
+                    {} if revision_performed else pre_critic_review
+                ),
                 "context_management": self.context_manager.summary(session.task_id),
             }
 
@@ -282,7 +309,15 @@ class AgenticReviewer(Reviewer):
             candidates = candidates_from(rule_findings, worker_results)
             before_critic = len(candidates)
 
-            if "critic" in run.enabled and candidates:
+            reusable_critic = executed.get("pre_critic_review") or {}
+            if reusable_critic and candidates:
+                candidates = restore_findings(
+                    reusable_critic.get("candidates") or []
+                )
+                critic_decisions = list(
+                    reusable_critic.get("decisions") or []
+                )
+            elif "critic" in run.enabled and candidates:
                 judged = session.runtime.run(
                     session.sub(REVIEWING, "critic"),
                     lambda: self._critic(
@@ -628,8 +663,11 @@ class AgenticReviewer(Reviewer):
 
     def _assess(
         self, session, run, delegations, worker_results, candidates,
-        index, max_rounds, memory_context,
+        index, max_rounds, memory_context, critic_preview=None,
     ) -> Dict[str, Any]:
+        critic_targets = self._pending_critic_review_items(
+            candidates, critic_preview or [], worker_results,
+        )
         decision = self._run_lead(
             "assess-workers", {
                 **self._model_diff(
@@ -639,6 +677,7 @@ class AgenticReviewer(Reviewer):
                 "assignments": delegations,
                 "worker_results": list(worker_results.values()),
                 "candidate_findings": [item.to_dict() for item in candidates],
+                "pre_revision_critic": critic_targets,
                 "revision_round": index,
                 "remaining_revision_rounds": max_rounds - index,
                 "recalled_memory": memory_context,
@@ -646,6 +685,7 @@ class AgenticReviewer(Reviewer):
         )
         return self._complete_assessment_protocol(
             decision, delegations, worker_results, max_rounds - index,
+            candidates, critic_preview,
         )
 
     @staticmethod
@@ -854,13 +894,95 @@ class AgenticReviewer(Reviewer):
                 return assignment
         return targets[0]
 
+    @staticmethod
+    def _pending_critic_review_items(candidates, critic_decisions, worker_results):
+        """Turn one or two exact Critic gaps into optional revision targets."""
+        ownership = []
+        for result in worker_results.values():
+            for finding in result.get("findings") or []:
+                if not isinstance(finding, dict):
+                    continue
+                ownership.append((
+                    str(finding.get("path") or ""),
+                    int(finding.get("line") or 0),
+                    str(result.get("assignment_id") or ""),
+                    str(result.get("worker") or ""),
+                ))
+        items = []
+        for decision in critic_decisions or []:
+            if decision.get("verdict") != "inconclusive":
+                continue
+            try:
+                index = int(decision.get("finding_index"))
+                finding = candidates[index]
+            except (IndexError, TypeError, ValueError):
+                continue
+            missing = [
+                dict(item) for item in decision.get("missing_proof") or []
+                if isinstance(item, dict)
+                and str(item.get("obligation") or "").strip()
+            ]
+            if not 1 <= len(missing) <= 2:
+                continue
+            owner = next(
+                (
+                    value for value in ownership
+                    if value[0] == finding.path and value[1] == finding.line
+                ),
+                None,
+            )
+            if owner is None:
+                continue
+            supporting = list(dict.fromkeys(
+                [
+                    str(ref.get("evidence_id"))
+                    for ref in finding.evidence_refs
+                    if isinstance(ref, dict) and ref.get("evidence_id")
+                ] + [
+                    str(evidence_id)
+                    for state in decision.get("proof_state") or []
+                    if isinstance(state, dict)
+                    for evidence_id in state.get("supporting_evidence_ids") or []
+                    if str(evidence_id).strip()
+                ]
+            ))[:8]
+            item_id = "critic:%d:%s:%d" % (index, finding.path, finding.line)
+            items.append({
+                "handoff_id": item_id,
+                "source_assignment_id": owner[2],
+                "source_worker": owner[3],
+                "target_worker": owner[3],
+                "claim": "%s. %s" % (finding.title, finding.explanation),
+                "location": "%s:%d" % (finding.path, finding.line),
+                "explanation": (
+                    "The Critic preserved the candidate but identified a bounded proof gap."
+                ),
+                "required_proof": " ".join(
+                    str(item.get("required_proof") or "").strip()
+                    for item in missing
+                    if str(item.get("required_proof") or "").strip()
+                )[:1000],
+                "supporting_evidence_ids": supporting,
+                "proof_state": list(decision.get("proof_state") or [])[:6],
+                "missing_obligations": [
+                    str(item.get("obligation"))[:80] for item in missing
+                ],
+                "origin": "critic-proof-gap",
+                "kind": "critic-proof-gap",
+                "severity": finding.severity.value,
+            })
+        return items
+
     @classmethod
     def _complete_assessment_protocol(
         cls, raw, delegations, worker_results, remaining_rounds,
+        candidates=None, critic_decisions=None,
     ) -> Dict[str, Any]:
         """Make Lead handling of handoffs explicit without adding another role."""
         decision = dict(raw or {})
-        pending = cls._pending_worker_review_items(worker_results)
+        pending = cls._pending_critic_review_items(
+            candidates or [], critic_decisions or [], worker_results,
+        ) + cls._pending_worker_review_items(worker_results)
         pending_by_id = {
             str(item.get("handoff_id")): item for item in pending
             if item.get("handoff_id")
@@ -1002,6 +1124,18 @@ class AgenticReviewer(Reviewer):
                             ) or []
                             if str(value).strip()
                         ][:8],
+                        "proof_state": [
+                            dict(value)
+                            for value in review_item.get("proof_state") or []
+                            if isinstance(value, dict)
+                        ][:6],
+                        "missing_obligations": [
+                            str(value)[:80]
+                            for value in review_item.get(
+                                "missing_obligations"
+                            ) or []
+                            if str(value).strip()
+                        ][:6],
                     })
                 request["evidence_targets"] = targets[:12]
 
