@@ -917,11 +917,19 @@ class AgenticReviewer(Reviewer):
                 finding = candidates[index]
             except (IndexError, TypeError, ValueError):
                 continue
-            missing = [
+            if finding.severity.value not in {"high", "critical"}:
+                continue
+            missing_obligations = [
                 dict(item) for item in decision.get("missing_proof") or []
                 if isinstance(item, dict)
                 and str(item.get("obligation") or "").strip()
             ]
+            missing_premises = [
+                dict(item) for item in decision.get("missing_premises") or []
+                if isinstance(item, dict)
+                and str(item.get("premise") or "").strip()
+            ]
+            missing = missing_premises or missing_obligations
             if not 1 <= len(missing) <= 2:
                 continue
             owner = next(
@@ -965,8 +973,10 @@ class AgenticReviewer(Reviewer):
                 "supporting_evidence_ids": supporting,
                 "proof_state": list(decision.get("proof_state") or [])[:6],
                 "missing_obligations": [
-                    str(item.get("obligation"))[:80] for item in missing
+                    str(item.get("obligation"))[:80]
+                    for item in missing_obligations
                 ],
+                "missing_premises": missing_premises,
                 "origin": "critic-proof-gap",
                 "kind": "critic-proof-gap",
                 "severity": finding.severity.value,
@@ -1136,6 +1146,11 @@ class AgenticReviewer(Reviewer):
                             ) or []
                             if str(value).strip()
                         ][:6],
+                        "missing_premises": [
+                            dict(value)
+                            for value in review_item.get("missing_premises") or []
+                            if isinstance(value, dict)
+                        ][:2],
                     })
                 request["evidence_targets"] = targets[:12]
 

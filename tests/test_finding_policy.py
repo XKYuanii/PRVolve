@@ -74,6 +74,7 @@ class FindingPolicyTests(unittest.TestCase):
             ["read-file:1"],
             decisions[0]["causal_delta"]["premises"][0]["supporting_evidence_ids"],
         )
+        self.assertEqual([], decisions[0]["missing_premises"])
 
     def test_known_aliases_are_canonicalized_and_generic_ids_are_bucketed(self):
         self.assertEqual(

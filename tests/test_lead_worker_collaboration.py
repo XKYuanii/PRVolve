@@ -237,7 +237,7 @@ class LeadWorkerCollaborationTests(unittest.TestCase):
 
     def test_lead_can_choose_one_exact_critic_gap_without_forcing_revision(self):
         finding = Finding(
-            rule_id="CWE-248", severity=Severity.MEDIUM,
+            rule_id="CWE-248", severity=Severity.HIGH,
             title="Missing key raises", explanation="A supported key may be absent.",
             path="app.py", line=7, evidence="value['key']",
             fix="Validate the key.", test="Pass a missing key.",
@@ -297,6 +297,52 @@ class LeadWorkerCollaborationTests(unittest.TestCase):
         self.assertEqual(["reproducible"], target["missing_obligations"])
         self.assertEqual(proof_state, target["proof_state"])
         self.assertEqual(["changed-line:1"], target["supporting_evidence_ids"])
+
+    def test_one_missing_premise_can_underlie_several_missing_obligations(self):
+        finding = Finding(
+            rule_id="CWE-476", severity=Severity.HIGH,
+            title="Removed guard can crash", explanation="A layer may lack mlp.",
+            path="model.py", line=12, evidence="layer.mlp",
+            fix="Restore the guard.", test="Use a supported layer without mlp.",
+            confidence=0.7, source="correctness-reliability",
+            evidence_refs=[{"evidence_id": "changed-line:1"}],
+        )
+        worker_results = {"corr-1": {
+            "assignment_id": "corr-1", "worker": "correctness-reliability",
+            "findings": [finding.to_dict()],
+        }}
+        decision = {
+            "finding_index": 0, "verdict": "inconclusive",
+            "proof_state": [
+                {"obligation": name, "status": "missing", "required_proof": name,
+                 "supporting_evidence_ids": []}
+                for name in (
+                    "reproducible", "evidence_sufficient",
+                    "would_comment_on_real_pr", "premises_verified",
+                )
+            ],
+            "missing_proof": [
+                {"obligation": name, "required_proof": name,
+                 "supporting_evidence_ids": []}
+                for name in (
+                    "reproducible", "evidence_sufficient",
+                    "would_comment_on_real_pr", "premises_verified",
+                )
+            ],
+            "missing_premises": [{
+                "premise": "A supported decoder layer can lack mlp.",
+                "required_proof": "Read the layer producer or an existing test.",
+                "supporting_evidence_ids": ["changed-line:1"],
+            }],
+        }
+
+        items = AgenticReviewer._pending_critic_review_items(
+            [finding], [decision], worker_results,
+        )
+
+        self.assertEqual(1, len(items))
+        self.assertEqual(1, len(items[0]["missing_premises"]))
+        self.assertEqual(4, len(items[0]["missing_obligations"]))
 
     def test_lead_delegates_requests_revision_and_synthesizes(self):
         client = HierarchicalClient()

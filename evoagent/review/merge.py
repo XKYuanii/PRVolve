@@ -217,6 +217,23 @@ def normalize_revision_requests(raw, assignments):
                         for entry in value.get("missing_obligations") or []
                         if str(entry).strip()
                     ][:6],
+                    "missing_premises": [
+                        {
+                            "premise": str(entry.get("premise") or "")[:1000],
+                            "required_proof": str(
+                                entry.get("required_proof") or ""
+                            )[:1000],
+                            "supporting_evidence_ids": [
+                                str(evidence_id)[:200]
+                                for evidence_id in entry.get(
+                                    "supporting_evidence_ids"
+                                ) or []
+                                if str(evidence_id).strip()
+                            ][:8],
+                        }
+                        for entry in value.get("missing_premises") or []
+                        if isinstance(entry, dict)
+                    ][:2],
                 }
                 for value in item.get("evidence_targets") or []
                 if isinstance(value, dict) and str(value.get("path") or "").strip()
@@ -281,6 +298,9 @@ def _critic_proof_status(decision):
                 "premise": str(item.get("premise") or "")[:1000],
                 "status": str(item.get("status") or "")[:40],
                 "evidence": str(item.get("evidence") or "")[:1000],
+                "required_proof": str(
+                    item.get("required_proof") or ""
+                )[:1000],
                 "supporting_evidence_ids": [
                     str(value)[:200]
                     for value in item.get("supporting_evidence_ids") or []
@@ -414,6 +434,25 @@ def apply_critic(result, candidates):
             }
             for item in proof_state if item["status"] != "verified"
         ]
+        # Publication obligations are dependent: one unverified reachability
+        # premise can make reproducibility, sufficiency, actionability and the
+        # aggregate premise check all false. Keep the six-state view, but use
+        # independent causal premises as the bounded revision work units.
+        missing_premises = [
+            {
+                "premise": item["premise"],
+                "required_proof": (
+                    item.get("required_proof") or
+                    "Verify whether this premise holds: %s" % item["premise"]
+                )[:1000],
+                "supporting_evidence_ids": list(
+                    item.get("supporting_evidence_ids") or []
+                ),
+            }
+            for item in causal_delta.get("premises") or []
+            if str(item.get("status") or "").strip().lower() == "missing"
+            and str(item.get("premise") or "").strip()
+        ]
         publication_ready = accepted and all(verification.values())
         corrected_rule_id = ""
         # Deterministic scanners own their stable rule identity.  A Critic may
@@ -458,6 +497,7 @@ def apply_critic(result, candidates):
             "causal_delta": causal_delta,
             "proof_state": proof_state,
             "missing_proof": missing_proof,
+            "missing_premises": missing_premises,
             "objections": objections if decision else [
                 "critic returned no explicit decision"
             ],
