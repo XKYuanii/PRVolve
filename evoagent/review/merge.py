@@ -26,37 +26,6 @@ from ..core.models import Finding, Severity
 from ..session.ledger import ExecutionLedger
 
 
-PROOF_OBLIGATIONS = (
-    "introduced_by_diff",
-    "reproducible",
-    "evidence_sufficient",
-    "would_comment_on_real_pr",
-    "differential_causality",
-    "premises_verified",
-)
-
-PROOF_REQUIREMENTS = {
-    "introduced_by_diff": (
-        "Cite the exact changed line and show that the patch introduces the claimed behavior."
-    ),
-    "reproducible": (
-        "Establish one supported trigger, its unguarded path, and the deterministic failure."
-    ),
-    "evidence_sufficient": (
-        "Cite repository evidence connecting the trigger, changed operation, and failure."
-    ),
-    "would_comment_on_real_pr": (
-        "Establish concrete, actionable impact rather than a speculative possibility."
-    ),
-    "differential_causality": (
-        "Show different old and new behavior for the same supported input or state."
-    ),
-    "premises_verified": (
-        "Verify every material type, shape, reachability, configuration, and contract premise."
-    ),
-}
-
-
 def normalize_delegations(
     raw, worker_roles, changed_files, available_skills=None, requested_skills=None,
 ):
@@ -194,46 +163,6 @@ def normalize_revision_requests(raw, assignments):
                         for item in value.get("supporting_evidence_ids") or []
                         if str(item).strip()
                     ][:8],
-                    "proof_state": [
-                        {
-                            "obligation": str(entry.get("obligation") or "")[:80],
-                            "status": str(entry.get("status") or "")[:40],
-                            "required_proof": str(
-                                entry.get("required_proof") or ""
-                            )[:1000],
-                            "supporting_evidence_ids": [
-                                str(evidence_id)[:200]
-                                for evidence_id in entry.get(
-                                    "supporting_evidence_ids"
-                                ) or []
-                                if str(evidence_id).strip()
-                            ][:8],
-                        }
-                        for entry in value.get("proof_state") or []
-                        if isinstance(entry, dict)
-                    ][:6],
-                    "missing_obligations": [
-                        str(entry)[:80]
-                        for entry in value.get("missing_obligations") or []
-                        if str(entry).strip()
-                    ][:6],
-                    "missing_premises": [
-                        {
-                            "premise": str(entry.get("premise") or "")[:1000],
-                            "required_proof": str(
-                                entry.get("required_proof") or ""
-                            )[:1000],
-                            "supporting_evidence_ids": [
-                                str(evidence_id)[:200]
-                                for evidence_id in entry.get(
-                                    "supporting_evidence_ids"
-                                ) or []
-                                if str(evidence_id).strip()
-                            ][:8],
-                        }
-                        for entry in value.get("missing_premises") or []
-                        if isinstance(entry, dict)
-                    ][:2],
                 }
                 for value in item.get("evidence_targets") or []
                 if isinstance(value, dict) and str(value.get("path") or "").strip()
@@ -298,56 +227,11 @@ def _critic_proof_status(decision):
                 "premise": str(item.get("premise") or "")[:1000],
                 "status": str(item.get("status") or "")[:40],
                 "evidence": str(item.get("evidence") or "")[:1000],
-                "required_proof": str(
-                    item.get("required_proof") or ""
-                )[:1000],
-                "supporting_evidence_ids": [
-                    str(value)[:200]
-                    for value in item.get("supporting_evidence_ids") or []
-                    if str(value).strip()
-                ][:8],
             }
             for item in premises if isinstance(item, dict)
         ][:8],
     }
     return differential, premises_verified, normalized
-
-
-def _critic_proof_state(decision, verification):
-    """Keep each publication obligation and its evidence stable across roles."""
-    raw = {
-        str(item.get("obligation") or "").strip(): item
-        for item in (decision or {}).get("proof_state") or []
-        if isinstance(item, dict)
-        and str(item.get("obligation") or "").strip() in PROOF_OBLIGATIONS
-    }
-    state = []
-    for obligation in PROOF_OBLIGATIONS:
-        supplied = raw.get(obligation, {})
-        verified = bool(verification.get(obligation))
-        status = "verified" if verified else str(
-            supplied.get("status") or "missing"
-        ).strip().lower()
-        if status not in {"verified", "missing", "refuted"}:
-            status = "missing"
-        if verified:
-            status = "verified"
-        elif status == "verified":
-            status = "missing"
-        required = str(supplied.get("required_proof") or "").strip()
-        if status != "verified" and not required:
-            required = PROOF_REQUIREMENTS[obligation]
-        state.append({
-            "obligation": obligation,
-            "status": status,
-            "required_proof": required[:1000],
-            "supporting_evidence_ids": [
-                str(value)[:200]
-                for value in supplied.get("supporting_evidence_ids") or []
-                if str(value).strip()
-            ][:8],
-        })
-    return state
 
 
 def _change_grounded(decision, finding, evidence):
@@ -425,34 +309,6 @@ def apply_critic(result, candidates):
             "differential_causality": differential,
             "premises_verified": premises_verified,
         })
-        proof_state = _critic_proof_state(decision or {}, verification)
-        missing_proof = [
-            {
-                "obligation": item["obligation"],
-                "required_proof": item["required_proof"],
-                "supporting_evidence_ids": list(item["supporting_evidence_ids"]),
-            }
-            for item in proof_state if item["status"] != "verified"
-        ]
-        # Publication obligations are dependent: one unverified reachability
-        # premise can make reproducibility, sufficiency, actionability and the
-        # aggregate premise check all false. Keep the six-state view, but use
-        # independent causal premises as the bounded revision work units.
-        missing_premises = [
-            {
-                "premise": item["premise"],
-                "required_proof": (
-                    item.get("required_proof") or
-                    "Verify whether this premise holds: %s" % item["premise"]
-                )[:1000],
-                "supporting_evidence_ids": list(
-                    item.get("supporting_evidence_ids") or []
-                ),
-            }
-            for item in causal_delta.get("premises") or []
-            if str(item.get("status") or "").strip().lower() == "missing"
-            and str(item.get("premise") or "").strip()
-        ]
         publication_ready = accepted and all(verification.values())
         corrected_rule_id = ""
         # Deterministic scanners own their stable rule identity.  A Critic may
@@ -495,9 +351,6 @@ def apply_critic(result, candidates):
             "corrected_rule_id": corrected_rule_id,
             **verification,
             "causal_delta": causal_delta,
-            "proof_state": proof_state,
-            "missing_proof": missing_proof,
-            "missing_premises": missing_premises,
             "objections": objections if decision else [
                 "critic returned no explicit decision"
             ],

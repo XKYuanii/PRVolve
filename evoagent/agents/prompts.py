@@ -15,13 +15,6 @@ revision budget remains, every handoff, every high-risk unresolved hypothesis, e
 changed-line unresolved hypothesis and every Finding missing claim-specific evidence must either
 produce a revision request to an existing assignment owned by the target Worker or a handoff_decision that
 defers it with a concrete reason. A Worker saying a risk belongs to another domain is not a refutation.
-When pre_revision_critic is present, consider only high-risk candidates with exactly one or two
-independent missing_premises. Several proof_state obligations may depend on the same premise and do
-not count as separate searches. Request a revision only when the candidate is credible enough to justify
-another pass; otherwise defer it with a short reason. A revision is never mandatory. Copy the Critic's
-exact missing premises, proof state, and evidence IDs instead of asking the Worker to review the candidate again.
-If you choose one, put its handoff_id in revision_requests[].handoff_ids and also return the same
-handoff_id with action=revise; if you choose defer, do not say that a revision is warranted or requested.
 Treat an exhaustive-path refutation as incomplete if it skips a zero-iteration loop, an empty
 container/string, or another boundary value allowed by the visible type. Do not let one Worker's
 refutation silently override another Worker's conflicting unresolved hypothesis.
@@ -132,13 +125,6 @@ or public-interface test does not also require an in-repository caller or full a
 Return a formal Finding when this witness is complete; unresolved should identify the still-missing
 fact, not repeat a fact already established by the cited code. On revisions, use prior_worker_result
 and evidence_mission without restarting or silently dropping the prior risk.
-For a high-risk diff, gather facts in this bounded order when relevant: the exact old/new guard or
-operation, one caller or declared input contract, then the body of a pre-existing test. Stop once the
-three-part proof is settled; this is a priority order, not a mandatory tool-call count.
-Treat evidence_mission as a delta: preserve verified proof_state entries and their evidence IDs,
-investigate only missing_premises (and update the affected missing_obligations), and do not repeat
-repository orientation, broad searches, or completed caller/test reads. Call a tool only when it can
-answer one named missing premise.
 For a replacement or removed guard, prefer a distinguishing witness: one input allowed by the
 surrounding interface for which the old expression/branch and the new one produce different behavior.
 Explain the purpose of the removed logic. Evidence for an adjacent failure at the same line does not
@@ -200,13 +186,6 @@ supporting_evidence_ids and copy its change.before and change.after exactly into
 and code_after. read_file shows only the new version. Never treat it as proof of pre-existing behavior.
 If any field cannot be established, name the missing proof in objections. Quotes establish the edit;
 they do not establish types or reachability. Do not copy either side's conclusion as its own proof.
-Do not write a general second review when proof is incomplete. Return the smallest concrete missing
-fact: an allowed input, caller path, pre-existing contract, or old/new behavioral distinction. Record
-all six publication obligations in proof_state. Each entry has obligation,
-status=verified|missing|refuted, supporting_evidence_ids, and required_proof. Under causal_delta.premises,
-give each independent missing premise its one concrete required_proof; do not multiply one missing fact
-into several search tasks merely because several proof_state obligations depend on it. Verified entries retain
-the evidence IDs that established them; missing entries request one settleable fact.
 Tests and documentation added or modified by the same PR are part of the proposition under review, not
 independent proof that the behavior is correct: they may encode the same regression. Do not reject solely
 because a new test asserts the behavior or a new doc describes it; require a pre-existing contract or other
@@ -224,14 +203,10 @@ Final action: {"action":"final","decisions":[{"finding_index":0,"accepted":true,
 "introduced_by_diff":true,"reproducible":true,"evidence_sufficient":true,
 "would_comment_on_real_pr":true,"objections":[],"confidence_adjustment":0.0,
 "corrected_rule_id":"CWE-ID","supporting_evidence_ids":["tool:id"],
-"proof_state":[{"obligation":"introduced_by_diff|reproducible|evidence_sufficient|would_comment_on_real_pr|differential_causality|premises_verified",
-"status":"verified|missing|refuted","supporting_evidence_ids":["tool:id"],
-"required_proof":"empty when verified; otherwise the one missing fact"}],
 "causal_delta":{"trigger":"same supported input/configuration","before":"old behavior",
 "after":"new behavior","failure":"exception or wrong result","contract":"pre-existing contract",
 "premises":[{"premise":"required type/reachability fact","status":"verified",
-"evidence":"repository fact or deterministic runtime rule","required_proof":"one fact when status is missing",
-"supporting_evidence_ids":["tool:id"]}]}}]}"""
+"evidence":"repository fact or deterministic runtime rule"}]}}]}"""
 
 RULE_ID_GUIDANCE = (
     "\nRule IDs: reuse a scanner ID; else use CWE-ID or a descriptive ID, never SEC-001. "

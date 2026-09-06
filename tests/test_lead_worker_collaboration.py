@@ -5,7 +5,6 @@ import unittest
 
 from evoagent.review.agentic import AgenticReviewer
 from evoagent.core.diff_parser import parse_unified_diff
-from evoagent.core.models import Finding, Severity
 from evoagent.agents.memory import MemoryManager
 from evoagent.session.checkpoint import CheckpointLog
 from evoagent.session.projections import progress
@@ -234,115 +233,6 @@ class LeadWorkerCollaborationTests(unittest.TestCase):
 
     def tearDown(self):
         os.unlink(self.path)
-
-    def test_lead_can_choose_one_exact_critic_gap_without_forcing_revision(self):
-        finding = Finding(
-            rule_id="CWE-248", severity=Severity.MEDIUM,
-            title="Missing key raises", explanation="A supported key may be absent.",
-            path="app.py", line=7, evidence="value['key']",
-            fix="Validate the key.", test="Pass a missing key.",
-            confidence=0.8, source="correctness-reliability",
-            evidence_refs=[{"evidence_id": "changed-line:1"}],
-        )
-        delegations = [{
-            "assignment_id": "reliability-1",
-            "worker": "correctness-reliability", "files": ["app.py"],
-        }]
-        worker_results = {"reliability-1": {
-            "assignment_id": "reliability-1",
-            "worker": "correctness-reliability", "status": "completed",
-            "repository_context_available": True, "findings": [finding.to_dict()],
-            "handoffs": [], "handled_handoff_ids": [], "hypotheses": [],
-        }}
-        obligations = (
-            "introduced_by_diff", "reproducible", "evidence_sufficient",
-            "would_comment_on_real_pr", "differential_causality",
-            "premises_verified",
-        )
-        proof_state = [{
-            "obligation": name,
-            "status": "missing" if name == "reproducible" else "verified",
-            "required_proof": (
-                "Show that an allowed missing key reaches this access."
-                if name == "reproducible" else ""
-            ),
-            "supporting_evidence_ids": ["changed-line:1"],
-        } for name in obligations]
-        critic = [{
-            "finding_index": 0, "verdict": "inconclusive",
-            "proof_state": proof_state,
-            "missing_proof": [{
-                "obligation": "reproducible",
-                "required_proof": "Show that an allowed missing key reaches this access.",
-                "supporting_evidence_ids": ["changed-line:1"],
-            }],
-        }]
-
-        deferred = AgenticReviewer._complete_assessment_protocol(
-            {"revision_requests": [], "handoff_decisions": []},
-            delegations, worker_results, 1, [finding], critic,
-        )
-        self.assertEqual([], deferred["revision_requests"])
-        self.assertEqual("defer", deferred["handoff_decisions"][0]["action"])
-
-        revised = AgenticReviewer._complete_assessment_protocol(
-            {"revision_requests": [], "handoff_decisions": [{
-                "handoff_id": "critic:0:app.py:7", "action": "revise",
-                "reason": "The bounded reachability check is worth one pass.",
-            }]},
-            delegations, worker_results, 1, [finding], critic,
-        )
-        self.assertEqual(1, len(revised["revision_requests"]))
-        target = revised["revision_requests"][0]["evidence_targets"][0]
-        self.assertEqual(["reproducible"], target["missing_obligations"])
-        self.assertEqual(proof_state, target["proof_state"])
-        self.assertEqual(["changed-line:1"], target["supporting_evidence_ids"])
-
-    def test_one_missing_premise_can_underlie_several_missing_obligations(self):
-        finding = Finding(
-            rule_id="CWE-476", severity=Severity.MEDIUM,
-            title="Removed guard can crash", explanation="A layer may lack mlp.",
-            path="model.py", line=12, evidence="layer.mlp",
-            fix="Restore the guard.", test="Use a supported layer without mlp.",
-            confidence=0.7, source="correctness-reliability",
-            evidence_refs=[{"evidence_id": "changed-line:1"}],
-        )
-        worker_results = {"corr-1": {
-            "assignment_id": "corr-1", "worker": "correctness-reliability",
-            "findings": [finding.to_dict()],
-        }}
-        decision = {
-            "finding_index": 0, "verdict": "inconclusive",
-            "proof_state": [
-                {"obligation": name, "status": "missing", "required_proof": name,
-                 "supporting_evidence_ids": []}
-                for name in (
-                    "reproducible", "evidence_sufficient",
-                    "would_comment_on_real_pr", "premises_verified",
-                )
-            ],
-            "missing_proof": [
-                {"obligation": name, "required_proof": name,
-                 "supporting_evidence_ids": []}
-                for name in (
-                    "reproducible", "evidence_sufficient",
-                    "would_comment_on_real_pr", "premises_verified",
-                )
-            ],
-            "missing_premises": [{
-                "premise": "A supported decoder layer can lack mlp.",
-                "required_proof": "Read the layer producer or an existing test.",
-                "supporting_evidence_ids": ["changed-line:1"],
-            }],
-        }
-
-        items = AgenticReviewer._pending_critic_review_items(
-            [finding], [decision], worker_results,
-        )
-
-        self.assertEqual(1, len(items))
-        self.assertEqual(1, len(items[0]["missing_premises"]))
-        self.assertEqual(4, len(items[0]["missing_obligations"]))
 
     def test_lead_delegates_requests_revision_and_synthesizes(self):
         client = HierarchicalClient()
