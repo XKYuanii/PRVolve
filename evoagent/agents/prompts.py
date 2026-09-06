@@ -20,6 +20,8 @@ independent missing_premises. Several proof_state obligations may depend on the 
 not count as separate searches. Request a revision only when the candidate is credible enough to justify
 another pass; otherwise defer it with a short reason. A revision is never mandatory. Copy the Critic's
 exact missing premises, proof state, and evidence IDs instead of asking the Worker to review the candidate again.
+If you choose one, put its handoff_id in revision_requests[].handoff_ids and also return the same
+handoff_id with action=revise; if you choose defer, do not say that a revision is warranted or requested.
 Treat an exhaustive-path refutation as incomplete if it skips a zero-iteration loop, an empty
 container/string, or another boundary value allowed by the visible type. Do not let one Worker's
 refutation silently override another Worker's conflicting unresolved hypothesis.
