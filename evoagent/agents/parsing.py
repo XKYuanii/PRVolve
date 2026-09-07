@@ -30,9 +30,13 @@ SCOPE_ONLY_REFUTATION_CUES = (
 def parse_findings(
     result: dict, parsed: ParsedDiff, role: str,
     validated_skills: Iterable[str] = (),
+    recalled_lesson_ids: Iterable[str] = (),
 ) -> List[Finding]:
     evidence = collect_evidence(result.get("_observations") or [])
     validated_skills = set(validated_skills)
+    recalled_lesson_ids = {
+        str(value) for value in recalled_lesson_ids if str(value)
+    }
     findings = []
     for raw in result.get("findings") or []:
         location = resolve_finding_location(raw, parsed)
@@ -59,6 +63,15 @@ def parse_findings(
             "agent-skill:" + claimed_skill
             if claimed_skill in validated_skills else role
         )
+        # A model may declare which recalled lessons influenced this claim, but
+        # it cannot invent provenance or use a lesson as factual evidence.
+        raw_used_lesson_ids = raw.get("used_lesson_ids")
+        if not isinstance(raw_used_lesson_ids, list):
+            raw_used_lesson_ids = []
+        used_lesson_ids = list(dict.fromkeys(
+            str(value) for value in raw_used_lesson_ids
+            if str(value) in recalled_lesson_ids
+        ))[:20]
         findings.append(Finding(
             rule_id=rule_id,
             severity=severity, title=str(raw.get("title", "Review finding"))[:200],
@@ -68,6 +81,7 @@ def parse_findings(
             confidence=max(0.0, min(1.0, confidence)), evidence_refs=refs,
             call_chain=chain, source=source,
             original_rule_id=(original_rule_id if original_rule_id != rule_id else ""),
+            used_lesson_ids=used_lesson_ids,
         ))
     return findings
 

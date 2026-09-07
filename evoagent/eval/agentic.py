@@ -99,6 +99,7 @@ class ProductArmReviewer:
     def __init__(
         self, arm: str, client: JsonChatClient, total_token_budget: int,
         total_time_budget_seconds: int = 120, max_revision_rounds: int = 1,
+        memory_manager=None, tenant_id: str = "default",
     ):
         if arm not in ARM_TOPOLOGY:
             raise ValueError("unknown evaluation arm: %s" % arm)
@@ -126,6 +127,10 @@ class ProductArmReviewer:
         self.per_role_token_budget = per_role_tokens
         self.per_role_time_budget_seconds = per_role_seconds
         self.expected_roles = roles
+        self.memory_enabled = bool(
+            memory_manager is not None and getattr(memory_manager, "enabled", False)
+        )
+        self.tenant_id = tenant_id or "default"
         self.store = _EvaluationTaskStore(task_input)
         # One bounded round is available by default, but only an explicit Lead
         # request executes it. Pass zero explicitly for a one-pass ablation;
@@ -141,6 +146,7 @@ class ProductArmReviewer:
             enabled_roles=enabled,
             scanners=[ContextRuleReviewer()],
             structured_config=structured_config,
+            memory_manager=memory_manager,
         )
         self._sequence = 0
         self._last_summary: Dict[str, Any] = {}
@@ -152,9 +158,14 @@ class ProductArmReviewer:
         self._sequence += 1
         task_id = "evaluation:%s:%d" % (self.arm, self._sequence)
         repository_root = str(case.get("repository_root") or "")
+        if repository_root:
+            self.store.task_input["repository_root"] = repository_root
+        else:
+            self.store.task_input.pop("repository_root", None)
         outcome = self.router.review_outcome(
             task_id, case["diff"], parsed,
-            repository=repository_root or str(case.get("repository") or ""),
+            repository=str(case.get("repository") or ""),
+            tenant_id=self.tenant_id,
         )
         self._last_summary = outcome.summary
         self._validate_execution()
@@ -274,6 +285,7 @@ class ProductArmReviewer:
             "scanner_catalog_sha256": catalog_sha256,
             "max_revision_rounds": self.router._max_revision_rounds(),
             "publish_unverified_suggestions": False,
+            "repository_lessons_enabled": self.memory_enabled,
             "total_token_budget_per_pr": self.total_token_budget,
             "per_role_token_budget": self.per_role_token_budget,
             "total_time_budget_seconds_per_pr": self.total_time_budget_seconds,

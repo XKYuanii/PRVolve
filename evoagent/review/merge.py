@@ -687,6 +687,10 @@ def restore_findings(values):
                 source=str(value.get("source", "unknown")),
                 original_rule_id=str(value.get("original_rule_id", "")),
                 disposition=str(value.get("disposition", "candidate")),
+                used_lesson_ids=list(dict.fromkeys(
+                    str(item) for item in value.get("used_lesson_ids") or []
+                    if str(item)
+                ))[:20],
             ))
         except (TypeError, ValueError):
             continue
@@ -854,6 +858,9 @@ def merge_findings(findings: Iterable[Finding]) -> List[Finding]:
                     if isinstance(item, dict)
                     and str(item.get("evidence_id")) not in known
                 )
+                finding.used_lesson_ids = list(dict.fromkeys(
+                    list(finding.used_lesson_ids) + list(current.used_lesson_ids)
+                ))[:20]
             merged[key] = finding
         elif current is not None:
             known = {
@@ -865,6 +872,9 @@ def merge_findings(findings: Iterable[Finding]) -> List[Finding]:
                 if isinstance(item, dict)
                 and str(item.get("evidence_id")) not in known
             )
+            current.used_lesson_ids = list(dict.fromkeys(
+                list(current.used_lesson_ids) + list(finding.used_lesson_ids)
+            ))[:20]
     order = {Severity.CRITICAL: 0, Severity.HIGH: 1, Severity.MEDIUM: 2, Severity.LOW: 3}
     return sorted(merged.values(), key=lambda item: (order[item.severity], item.path, item.line))
 

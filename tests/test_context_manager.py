@@ -123,6 +123,51 @@ class ContextManagerTests(unittest.TestCase):
             compressed["focus"]["locations"],
         )
 
+    def test_exact_candidate_line_survives_oversized_risky_hunk(self):
+        body = [" context_%03d = value" % index for index in range(1, 90)]
+        body[4] = "+timeout = 30"
+        body[69] = "+result = records[0]"
+        diff = (
+            "--- a/src/model.py\n+++ b/src/model.py\n"
+            "@@ -1,89 +1,89 @@\n" + "\n".join(body) + "\n"
+        )
+        manager = ContextManager(
+            context_window_tokens=2048, input_token_budget=800,
+            diff_token_budget=320,
+        )
+
+        compressed = manager.compress_diff(
+            diff, focus_locations=[("src/model.py", 70)], max_tokens=320,
+        )
+        content = compressed["selected_hunks"][0]["content"]
+
+        self.assertIn("result = records[0]", content)
+        self.assertIn("timeout = 30", content)
+
+    def test_exact_candidate_line_survives_final_payload_fit_at_minimum_budget(self):
+        body = [" context_%03d = %s" % (index, "x" * 80) for index in range(120)]
+        body[109] = "+focus_result = records[0]  # exact candidate location"
+        diff = (
+            "--- a/src/model.py\n+++ b/src/model.py\n"
+            "@@ -1,120 +1,120 @@\n" + "\n".join(body) + "\n"
+        )
+        manager = ContextManager(
+            context_window_tokens=1024, input_token_budget=512,
+            diff_token_budget=256,
+        )
+
+        compressed = manager.compress_diff(
+            diff, focus_locations=[("src/model.py", 110)], max_tokens=256,
+        )
+
+        self.assertIn(
+            "focus_result = records[0]",
+            compressed["selected_hunks"][0]["content"],
+        )
+        self.assertTrue(compressed["selected_hunks"][0]["contains_exact_focus"])
+        self.assertTrue(compressed["compression"]["focus_locations_preserved"])
+
+
     def test_old_observations_are_summarized_and_evidence_is_retained(self):
         manager = ContextManager(
             observation_token_budget=350, recent_observations=1,
@@ -217,6 +262,48 @@ class ContextMemoryIntegrationTests(unittest.TestCase):
         self.assertGreater(context["compression_calls"], 0)
         self.assertEqual(1, context["memory_recall"]["recalled"])
         self.assertIn("context_management", summary["execution"])
+
+    def test_assignment_filters_its_files_before_scoreable_line_limit(self):
+        first = "\n".join("+value_%03d = %d" % (index, index) for index in range(205))
+        diff = (
+            "--- a/src/first.py\n+++ b/src/first.py\n@@ -0,0 +1,205 @@\n"
+            + first
+            + "\n--- a/src/later.py\n+++ b/src/later.py\n@@ -0,0 +1 @@\n"
+            "+result = records[0]\n"
+        )
+
+        class LaterFileClient(CapturingClient):
+            def complete_json(self, role, system, user, ledger=None, max_tokens=None):
+                managed = json.loads(user)
+                task = json.loads(managed["task"])
+                if role == "lead" and task.get("phase") == "delegate":
+                    self.tasks.append((role, task, managed))
+                    if ledger:
+                        ledger.record_model(role, self.provider, self.model, {}, 1)
+                    return {"action": "final", "delegations": [{
+                        "assignment_id": "reliability-1",
+                        "worker": "correctness-reliability",
+                        "objective": "Review the later file.",
+                        "files": ["src/later.py"],
+                    }]}
+                return super().complete_json(
+                    role, system, user, ledger=ledger, max_tokens=max_tokens,
+                )
+
+        self.store.create("later-task", "org/repo", 2, {"mode": "agentic"})
+        client = LaterFileClient()
+        AgenticReviewer(self.store, client).review_with_context(
+            "later-task", diff, parse_unified_diff(diff), "org/repo",
+        )
+        worker_task = next(
+            task for role, task, _managed in client.tasks
+            if role == "correctness-reliability" and task.get("lead_assignment")
+        )
+
+        self.assertEqual([{
+            "path": "src/later.py", "line": 1,
+            "content": "result = records[0]",
+        }], worker_task["scoreable_added_lines"])
 
 
 if __name__ == "__main__":

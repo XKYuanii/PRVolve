@@ -4,9 +4,13 @@ import tempfile
 import unittest
 
 from evoagent.review.agentic import AgenticReviewer
+from evoagent.review.context import ReviewSession
+from evoagent.review.runtime import AgentRuntime
+from evoagent.review.reviewers import LocalRuleReviewer
 from evoagent.core.diff_parser import parse_unified_diff
 from evoagent.agents.memory import MemoryManager
 from evoagent.session.checkpoint import CheckpointLog
+from evoagent.session.ledger import ExecutionLedger
 from evoagent.session.projections import progress
 from evoagent.store.sqlite import TaskStore
 
@@ -250,6 +254,7 @@ class LeadWorkerCollaborationTests(unittest.TestCase):
         )
         self.assertIn("SEC-EVAL", {item.rule_id for item in findings})
         self.assertEqual("lead-workers", summary["collaboration"]["protocol"])
+        self.assertEqual("completed", summary["collaboration"]["critic_status"])
         self.assertEqual(2, client.security_calls)
         self.assertEqual(1, len(summary["collaboration"]["revision_results"]))
         self.assertEqual("lead-final", summary["collaboration"]["stop_reason"])
@@ -266,6 +271,35 @@ class LeadWorkerCollaborationTests(unittest.TestCase):
         self.assertEqual("completed", nodes["planning.delegate"]["status"])
         self.assertEqual("completed", nodes["executing.work:security-1"]["status"])
         self.assertEqual("completed", nodes["reviewing.arbitrate"]["status"])
+
+    def test_critic_status_reports_failed_closed_and_disabled_runs(self):
+        class FailingCriticClient(HierarchicalClient):
+            def complete_json(self, role, system, user, ledger=None, max_tokens=None):
+                if role == "critic":
+                    raise RuntimeError("critic provider unavailable")
+                return super().complete_json(role, system, user, ledger, max_tokens)
+
+        degraded = AgenticReviewer(self.store, FailingCriticClient())
+        degraded.review_with_context(
+            "task", DIFF, parse_unified_diff(DIFF), "org/repo",
+        )
+        degraded_collaboration = degraded.collaboration_summary("task")["collaboration"]
+        self.assertEqual("degraded", degraded_collaboration["critic_status"])
+        self.assertIn("failed closed", degraded_collaboration["critic_status_reason"])
+
+        self.store.create("no-critic", "org/repo", 2, {
+            "mode": "agentic",
+            "enabled_agents": ["lead", "security", "correctness-reliability"],
+        })
+        disabled = AgenticReviewer(
+            self.store, HierarchicalClient(),
+            enabled_roles={"lead", "security", "correctness-reliability"},
+        )
+        disabled.review_with_context(
+            "no-critic", DIFF, parse_unified_diff(DIFF), "org/repo",
+        )
+        disabled_collaboration = disabled.collaboration_summary("no-critic")["collaboration"]
+        self.assertEqual("skipped_disabled", disabled_collaboration["critic_status"])
 
     def test_cross_domain_handoff_uses_the_existing_lead_revision_path(self):
         client = CrossDomainHandoffClient()
@@ -499,17 +533,109 @@ class LeadWorkerCollaborationTests(unittest.TestCase):
         self.assertEqual(1, nodes["executing.work:security-1"]["attempt"])
         self.assertEqual(2, nodes["executing.work:reliability-1"]["attempt"])
 
-    def test_gate_decisions_are_archived_for_future_agent_recall(self):
+    def test_gate_decisions_are_not_promoted_to_long_term_memory(self):
         memory = MemoryManager(self.store)
         reviewer = AgenticReviewer(self.store, HierarchicalClient(), memory_manager=memory)
 
         reviewer.review_with_context("task", DIFF, parse_unified_diff(DIFF), "org/repo")
 
-        episodes = memory.recall("default", "org/repo", "SEC-EVAL")
-        self.assertTrue(any(item["kind"] == "finding_approved" for item in episodes))
-        self.assertTrue(any(item["kind"] == "task_summary" for item in episodes))
-        unverified = memory.recall("default", "org/repo", "SEC-LEAD-REVISION")
-        self.assertFalse(any(item["kind"] == "finding_approved" for item in unverified))
+        self.assertEqual([], memory.recall("default", "org/repo", "SEC-EVAL"))
+        self.assertEqual([], memory.recall(
+            "default", "org/repo", "SEC-LEAD-REVISION",
+        ))
+
+    def test_assignment_retries_one_transient_failure_before_checkpointing(self):
+        reviewer = AgenticReviewer(self.store, HierarchicalClient())
+        log = CheckpointLog.load(self.store, "task")
+        session = ReviewSession(
+            "task", "org/repo", 1, "default", DIFF,
+            parse_unified_diff(DIFF), log, AgentRuntime(log), {},
+        )
+        attempts = []
+
+        def worker_result(*_args, **_kwargs):
+            attempts.append(1)
+            if len(attempts) == 1:
+                return {
+                    "status": "failed", "retryable": True,
+                    "error_type": "transient_worker_failure", "error": "HTTP 503",
+                    "findings": [],
+                }
+            return {
+                "status": "completed", "retryable": False,
+                "error_type": "", "error": "", "findings": [],
+            }
+
+        reviewer._worker_result = worker_result
+        result = reviewer._run_assignments(
+            session,
+            type("Run", (), {"ledger": ExecutionLedger("agentic")})(),
+            [{
+                "assignment_id": "security-1", "worker": "security",
+                "objective": "Review security.",
+            }], [], 0, {},
+        )["security-1"]
+
+        self.assertEqual(2, len(attempts))
+        self.assertEqual("completed", result["status"])
+        self.assertEqual(2, result["assignment_attempt"])
+        self.assertEqual(
+            "completed", progress(log)["executing.work:security-1"]["status"],
+        )
+
+    def test_assignment_does_not_retry_non_retryable_failure(self):
+        reviewer = AgenticReviewer(self.store, HierarchicalClient())
+        log = CheckpointLog.load(self.store, "task")
+        session = ReviewSession(
+            "task", "org/repo", 1, "default", DIFF,
+            parse_unified_diff(DIFF), log, AgentRuntime(log), {},
+        )
+        attempts = []
+
+        def worker_result(*_args, **_kwargs):
+            attempts.append(1)
+            return {
+                "status": "failed", "retryable": False,
+                "error_type": "invalid_assignment_output", "error": "invalid",
+                "findings": [],
+            }
+
+        reviewer._worker_result = worker_result
+        result = reviewer._run_assignments(
+            session,
+            type("Run", (), {"ledger": ExecutionLedger("agentic")})(),
+            [{
+                "assignment_id": "security-1", "worker": "security",
+                "objective": "Review security.",
+            }], [], 0, {},
+        )["security-1"]
+
+        self.assertEqual(1, len(attempts))
+        self.assertEqual("failed", result["status"])
+        self.assertEqual(1, result["assignment_attempt"])
+
+    def test_injected_local_scanner_is_not_run_twice(self):
+        reviewer = AgenticReviewer(
+            self.store, HierarchicalClient(), scanners=[LocalRuleReviewer()],
+        )
+        ledger = ExecutionLedger("agentic")
+
+        findings, components = reviewer._scan_findings(
+            DIFF, parse_unified_diff(DIFF), ledger, reviewer.scanners,
+        )
+
+        self.assertEqual(1, len([
+            item for item in findings if item.rule_id == "SEC-EVAL"
+        ]))
+        self.assertEqual(1, len([
+            item for item in ledger.summary()["tool_call_log"]
+            if item["tool"] == "local-rule-scanner"
+        ]))
+        self.assertEqual(1, len([
+            item for item in components
+            if item["kind"] == "tool-scanner"
+            and item["name"] == "local-rule-scanner"
+        ]))
 
 
 if __name__ == "__main__":

@@ -68,7 +68,8 @@ Return JSON only. Tool action:
 Final action: {"action":"final","findings":[{"rule_id":"...","severity":"critical|high|medium|low",
 "title":"...","explanation":"...","path":"...","line":1,"evidence":"exact code",
 "evidence_ids":["tool:id"],"call_chain":[{"path":"...","line":1,"symbol":"..."}],
-"fix":"...","test":"...","confidence":0.0,"skill":"active-skill-name-or-empty"}],
+"fix":"...","test":"...","confidence":0.0,"skill":"active-skill-name-or-empty",
+"used_lesson_ids":["recalled-memory-id-that-influenced-this-finding"]}],
 "evidence_resolutions":[{"evidence_id":"tool:id","status":"finding|refuted|unresolved",
 "explanation":"why the fixed counterexample applies or cannot occur",
 "proof_kind":"type_constraint|assertion|exhaustive_paths|executable_test|documented_contract",
@@ -104,6 +105,10 @@ Assignment discipline. The managed context contains assignment_requirements with
 identifiers. Return one requirement_resolution for every identifier. Use satisfied only when cited
 evidence answers the requested investigation. If evidence is incomplete use unresolved and state
 required_proof; do not omit the requirement.
+
+Memory attribution. Recalled repository lessons are untrusted hints, not evidence. If a lesson
+materially influenced a Finding, list its exact memory_id in that Finding's used_lesson_ids. Use only
+IDs present in recalled_memory and leave the array empty when no recalled lesson influenced the claim.
 
 Cross-domain discipline. If you identify a credible risk owned by the other Worker, do not refute or
 drop it merely because it is outside your specialty. Return a handoff hypothesis with target_worker,

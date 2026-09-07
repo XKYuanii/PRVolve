@@ -249,17 +249,23 @@ PREvolve 包含两类修复实现：
 
 修复通过后写入新的 `evoagent/fix-pr-*` 分支并创建 Draft PR，不直接修改原 PR 分支。设置 `EVOAGENT_REPAIR_TEST_COMMAND` 可以加入项目级验证命令；未通过前后测试对比的补丁不会发布。
 
-## Prompt 与 Skill 进化
+## Review Policy 进化与 Agent Skill
 
-确认反馈可以标记为误报、漏报、坏修复或执行异常。进化引擎会：
+人工确认的误报、漏报和坏修复既可沉淀为仓库经验，也可进入 Review Policy 候选生成。当前自动演进主线修改版本化 Prompt；Agent Skill 保留为人工维护的通用审查方法。自动 Skill 演进默认关闭，仅在显式设置 `EVOAGENT_EXPERIMENTAL_SKILL_EVOLUTION_ENABLED=true` 时开放实验接口。进化引擎会：
 
 1. 按租户和仓库隔离失败案例；
-2. 生成并去重 Prompt 或 Skill 候选；
+2. 生成并去重 Review Policy 候选；
 3. 在版本化 Validation 与 Holdout 上回放；
 4. 检查安全性、指标提升和非退化条件；
-5. 激活候选，或在灰度错误预算触发时回滚。
+5. 将通过门禁的版本标记为 `candidate_ready`，经管理接口人工激活，并支持回滚。
 
-动态 Skill 还需通过 manifest、签名、权限和隔离进程检查。调用方提交的回归分数不会直接用于激活。
+确定性 evolution proof 用于证明反馈、版本、回放、门禁和回滚管线；它不证明外部 LLM 权重改进或真实 PR 生产效果。`scripts/run_prompt_evolution_proof.py --reviewer llm` 可复用同一管线运行真实 LLM 实验。调用方提交的回归分数不会直接用于激活。
+
+默认 Review Policy 门禁使用版本化的 `evolution-gate-v2` 合成语料：16 条 Validation 与 4 条不向接口暴露明细的 Holdout，正例覆盖动态执行、注入、反序列化、密钥与可靠性风险，同时配有相近的安全负例。其作用是稳定验证候选门禁，不替代 `benchmarks/` 中的真实 PR before/after 基线。
+
+Repository Lessons 的收益通过 `scripts/run_repository_memory_ab.py` 做配对 A/B：同一模型、数据集和预算分别关闭与开启长期经验，报告 recall、误报、干净 PR、执行成功率等指标差异。该实验读取服务数据库中已经由人工反馈确认的 lessons，不会把普通模型 Finding 自动当作经验。
+
+ReleaseManager 已具备 deployment、lane、shadow observation 和错误预算的数据结构，但审查执行链目前只加载 active Review Policy，尚未按 lane 选择候选版本。因此新任务明确记录 `release_execution_routing=not_connected`，当前不把这些接口宣称为已接通的在线 Shadow/Canary。
 
 ## GitHub 接入
 
@@ -304,7 +310,7 @@ $env:EVOAGENT_AUTO_POST_REVIEW = 'true'
 | `POST` | `/webhooks/github` | 接收 PR Webhook |
 | `GET` | `/metrics` | Prometheus 指标 |
 
-Skill 版本、进化评测、灰度发布、告警、审计与死信队列接口可在管理台中使用，对应路由实现在 [evoagent/serving/api.py](evoagent/serving/api.py)。
+Skill 版本、进化评测、发布配置、告警、审计与死信队列接口可在管理台中使用；发布配置目前不改变任务实际执行版本，对应路由实现在 [evoagent/serving/api.py](evoagent/serving/api.py)。
 
 ## 持久化、队列与可观测性
 
@@ -312,8 +318,9 @@ Skill 版本、进化评测、灰度发布、告警、审计与死信队列接�
 - 断点续跑读取该日志并跳过已完成节点。节点名分层（`executing.work:security-1`），因此 Harness 与 Agentic Reviewer 用同一套机制在各自粒度上续跑，不存在第二套 Checkpoint 格式。
 - 本地模式使用 SQLite 和进程内任务执行。
 - 生产模式使用 PostgreSQL 与 Redis Streams，支持 ACK、Worker Lease、指数退避、重试和死信队列。
-- Working、Episodic、Semantic、Procedural 四类记忆按租户和仓库隔离，并支持归档、召回和过期清理。
+- 记忆产品语义收敛为两类：当前 PR 的 Task Evidence 用于恢复和取证，任务结束即清理；跨 PR 只召回人工或测试确认的 Repository Lessons。底层保留历史 scope 字段用于兼容旧数据。
 - OpenTelemetry 记录调用链，Prometheus 暴露运行指标，告警与管理审计持久化保存。
+- 执行报告分别记录 Runtime node attempt、Worker assignment attempt 和 LLM request attempt，并附带实际 `review_policy_version` 与本次召回的 lesson ID。每条模型 Finding 还可携带经召回集合校验的 `used_lesson_ids`；它表示模型声明的影响来源，用于归因分析，不作为缺陷证据或因果证明。
 
 ## 测试
 
@@ -324,6 +331,8 @@ python -m unittest discover -s tests -v
 评测脚本位于 [scripts](scripts)，版本化数据集和人工裁决位于 [benchmarks](benchmarks)。历史报告应优先使用缓存重评分脚本处理标签修订，避免在人工裁决阶段意外产生新的模型调用。
 
 Agentic 模式中的规则 scanner 是不向 Lead/Worker 暴露结果的并行发布兜底，不是 Agent 的提示或任务来源。评测必须固定 scanner catalog（报告记录其 SHA-256），并分别报告 Worker 独立形成 Finding 的召回、Worker 独立可发布召回、scanner 独有发现、scanner 发布兜底和最终产品召回；不得把同一数据集的漏检改写成 scanner 规则后，再把新的产品召回宣称为模型能力。
+
+仓库检查运行在受限命令集合和临时检出目录中，并有路径与超时边界；当前不提供容器或 microVM 级 OS 隔离，也不保证可靠断网。生产部署需补充进程/容器隔离、资源限制和网络策略。
 
 缺陷定位与 CWE 分类分开评分。`target_detection_recall` 表示已覆盖已知审查位置，`taxonomy_accuracy_on_detected_targets` 表示这些命中中 CWE 也正确的比例；原 `precision` / `recall` / `f1` 继续保留为位置与 CWE 都一致的严格兼容指标。目标位置命中不等于完整语义裁决，也不能用于估算未穷举标签数据集的精确率。
 

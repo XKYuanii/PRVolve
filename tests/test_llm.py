@@ -71,6 +71,19 @@ class JsonChatClientTests(unittest.TestCase):
         self.assertIn("malformed JSON object", retry_payload["messages"][-1]["content"])
 
     @mock.patch("evoagent.llm.client.urllib.request.urlopen")
+    def test_request_timeout_is_bounded_by_call_deadline(self, urlopen):
+        urlopen.return_value = FakeResponse('{"action":"final"}')
+        client = JsonChatClient(
+            "https://example.test", "secret", "model", timeout=60,
+        )
+
+        client.complete_json(
+            "lead", "system", "task", timeout_seconds=0.2,
+        )
+
+        self.assertLessEqual(urlopen.call_args.kwargs["timeout"], 0.2)
+
+    @mock.patch("evoagent.llm.client.urllib.request.urlopen")
     def test_json_markdown_fence_is_removed_locally(self, urlopen):
         urlopen.return_value = FakeResponse('```json\n{"action":"final"}\n```')
         client = JsonChatClient("https://example.test", "secret", "model")
@@ -91,8 +104,11 @@ class JsonChatClientTests(unittest.TestCase):
         self.assertEqual("final", result["action"])
         self.assertEqual(1, urlopen.call_count)
         events = ledger.summary()["agent_traces"]["lead"]
-        self.assertEqual("structured_json_extra_values_ignored", events[0]["event"])
-        self.assertEqual(1, events[0]["trailing_values"])
+        ignored = next(
+            item for item in events
+            if item["event"] == "structured_json_extra_values_ignored"
+        )
+        self.assertEqual(1, ignored["trailing_values"])
 
     @mock.patch("evoagent.llm.client.urllib.request.urlopen")
     def test_json_with_trailing_prose_is_still_retried(self, urlopen):

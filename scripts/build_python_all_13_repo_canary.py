@@ -1,6 +1,7 @@
 """Combine the 13 Python PR families with verified container checkout paths."""
 from __future__ import annotations
 
+import argparse
 import copy
 import json
 import os
@@ -22,7 +23,6 @@ SOURCES = [
 ]
 OUTPUT = os.path.join(ROOT, "benchmarks", "python_all_13_repo_canary_v1.jsonl")
 RUNTIME_ROOT = os.environ.get("EVOAGENT_BENCHMARK_RUNTIME_ROOT", "/app")
-RUNTIME_JOIN = posixpath.join if RUNTIME_ROOT.startswith("/") else os.path.join
 
 
 def relative_checkout(case: dict) -> str:
@@ -63,6 +63,15 @@ def verify_checkout(case: dict, relative: str) -> None:
 
 
 def main() -> None:
+    parser = argparse.ArgumentParser(
+        description="Build the verified 13-repository canary for one runtime path layout.",
+    )
+    parser.add_argument("--output", default=OUTPUT)
+    parser.add_argument("--runtime-root", default=RUNTIME_ROOT)
+    args = parser.parse_args()
+    output = os.path.abspath(args.output)
+    runtime_root = str(args.runtime_root)
+    runtime_join = posixpath.join if runtime_root.startswith("/") else os.path.join
     cases = []
     for source in SOURCES:
         cases.extend(copy.deepcopy(load_jsonl(source)))
@@ -84,17 +93,18 @@ def main() -> None:
     for case in cases:
         relative = relative_checkout(case)
         verify_checkout(case, relative)
-        case["repository_root"] = RUNTIME_JOIN(
-            RUNTIME_ROOT, *relative.split("/")
+        case["repository_root"] = runtime_join(
+            runtime_root, *relative.split("/")
         )
-    temporary = OUTPUT + ".tmp"
+    os.makedirs(os.path.dirname(output), exist_ok=True)
+    temporary = output + ".tmp"
     with open(temporary, "w", encoding="utf-8", newline="\n") as handle:
         for case in cases:
             handle.write(json.dumps(case, ensure_ascii=False, sort_keys=True))
             handle.write("\n")
-    os.replace(temporary, OUTPUT)
-    load_jsonl(OUTPUT)
-    print("built 26 verified records across 13 repositories")
+    os.replace(temporary, output)
+    load_jsonl(output)
+    print("built 26 verified records across 13 repositories: %s" % output)
 
 
 if __name__ == "__main__":

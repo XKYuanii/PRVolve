@@ -29,7 +29,8 @@ class PromptEvolutionProofTests(unittest.TestCase):
             write_jsonl(cases, dataset_path)
             report = run_prompt_evolution_proof(dataset_path, database_path)
 
-        self.assertEqual("activated", report["evolution_run"]["decision"])
+        self.assertEqual("candidate_ready", report["evolution_run"]["decision"])
+        self.assertTrue(report["evolution_run"]["manual_activation"])
         self.assertEqual(32, report["feedback"]["missed_findings"])
         self.assertGreater(
             report["validation"]["candidate"]["f1"],

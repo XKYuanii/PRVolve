@@ -38,6 +38,7 @@ from ..core.finding_policy import (
 )
 from ..core.models import ComponentKind, Finding
 from ..core.modes import component, resolve_mode
+from ..errors import BudgetExceeded, TaskCancelled, ToolProtocolError
 from ..llm.context import ContextManager
 from ..session.checkpoint import CheckpointLog
 from ..session.ledger import ExecutionLedger
@@ -92,6 +93,7 @@ class AgenticReviewer(Reviewer):
         memory_manager=None,
         context_manager: Optional[ContextManager] = None,
         skill_provider=None,
+        review_policy_version: Optional[int] = None,
     ):
         self.store = store
         self.client = llm_client
@@ -102,6 +104,9 @@ class AgenticReviewer(Reviewer):
         self.enabled_roles = enabled_roles or {
             "lead", "security", "correctness-reliability", "critic"
         }
+        # Keep the stable local-rule baseline and its public evaluation catalog.
+        # An externally registered LocalRuleReviewer is filtered at execution so
+        # service discovery cannot run the same catalog a second time.
         self.rules = LocalRuleReviewer()
         self.scanners = list(scanners or [])
         self.scanner_provider = scanner_provider
@@ -111,6 +116,7 @@ class AgenticReviewer(Reviewer):
         self.memory_manager = memory_manager
         self.context_manager = context_manager or ContextManager()
         self.skill_provider = skill_provider
+        self.review_policy_version = review_policy_version
         if self.structured_config:
             self.prompt_overlay += "\nStructured runtime policy:\n" + json.dumps(
                 self.structured_config, ensure_ascii=False, sort_keys=True
@@ -293,11 +299,22 @@ class AgenticReviewer(Reviewer):
                 )
                 candidates = restore_findings(judged["candidates"])
                 critic_decisions = judged["decisions"]
+                critic_status = str(judged.get("status") or "completed")
+                critic_status_reason = str(judged.get("status_reason") or "")
             else:
                 critic_decisions = [
                     {"finding_index": index, "accepted": True, "objections": []}
                     for index in range(len(candidates))
                 ]
+                critic_status = (
+                    "skipped_no_candidates" if "critic" in run.enabled
+                    else "skipped_disabled"
+                )
+                critic_status_reason = (
+                    "there were no candidate findings to challenge"
+                    if "critic" in run.enabled
+                    else "the critic role was disabled for this run"
+                )
 
             arbitrated = session.runtime.run(
                 session.sub(REVIEWING, "arbitrate"),
@@ -325,6 +342,7 @@ class AgenticReviewer(Reviewer):
                 run, planned, executed, lead_final, publication_decisions,
                 critic_decisions, planned["scanner_findings"],
                 before_critic, len(accepted), suggestions,
+                critic_status, critic_status_reason,
             )
             gated = self.gate.apply(accepted, session.parsed)
             run.ledger.trace("evidence-gate", "completed", **gated.checks)
@@ -333,6 +351,7 @@ class AgenticReviewer(Reviewer):
                 gated, session.parsed.files, collaboration,
             )
             execution = run.ledger.summary()
+            execution["review_policy_version"] = self.review_policy_version
             execution["context_management"] = self.context_manager.summary(session.task_id)
             summary = {
                 "run_mode": planned["run_mode"],
@@ -492,6 +511,7 @@ class AgenticReviewer(Reviewer):
     def _collaboration(
         run, planned, executed, lead_final, publication_decisions, critic_decisions,
         scanner_findings, before_critic, accepted_count, suggestions,
+        critic_status, critic_status_reason,
     ) -> Dict[str, Any]:
         delegations = planned["delegations"]
         public_worker = lambda item: {
@@ -531,6 +551,8 @@ class AgenticReviewer(Reviewer):
             "suggestion_count": len(suggestions),
             "publication_decisions": publication_decisions,
             "critic_decisions": critic_decisions,
+            "critic_status": critic_status,
+            "critic_status_reason": critic_status_reason,
             "stop_reason": executed["stop_reason"],
         }
 
@@ -607,6 +629,8 @@ class AgenticReviewer(Reviewer):
                 candidates=len(candidates),
             )
             return {
+                "status": "degraded",
+                "status_reason": "critic failed closed: " + str(exc)[:500],
                 "candidates": [item.to_dict() for item in candidates],
                 "decisions": [{
                     "finding_index": index, "accepted": False,
@@ -622,6 +646,8 @@ class AgenticReviewer(Reviewer):
             }
         kept, decisions = apply_critic(result, candidates)
         return {
+            "status": "completed",
+            "status_reason": "",
             "candidates": [item.to_dict() for item in kept],
             "decisions": decisions,
         }
@@ -635,6 +661,7 @@ class AgenticReviewer(Reviewer):
                 **self._model_diff(
                     session.diff, session.task_id, "lead:assess-workers",
                     focus_files=[item.path for item in candidates],
+                    focus_locations=[(item.path, item.line) for item in candidates],
                 ),
                 "assignments": delegations,
                 "worker_results": list(worker_results.values()),
@@ -1099,12 +1126,58 @@ class AgenticReviewer(Reviewer):
             return results
 
         def execute(run_id, assignment):
+            deadline = time.monotonic() + max(0.01, float(self.default_time_budget))
+
+            def attempt_assignment():
+                last_result = None
+                for attempt in range(1, 3):
+                    session.runtime.guard(session.sub(EXECUTING, "work:%s" % run_id))
+                    remaining = deadline - time.monotonic()
+                    if remaining <= 0:
+                        break
+                    started = time.monotonic()
+                    result = self._worker_result(
+                        session, run, assignment, run_id, scanner_findings,
+                        revision_round, memory_context, time_budget=remaining,
+                    )
+                    elapsed_ms = int((time.monotonic() - started) * 1000)
+                    result["assignment_attempt"] = attempt
+                    result["attempt_duration_ms"] = elapsed_ms
+                    result["deadline_seconds"] = float(self.default_time_budget)
+                    if time.monotonic() >= deadline:
+                        result.update({
+                            "status": "timed_out",
+                            "error_type": "assignment_deadline",
+                            "retryable": False,
+                            "error": "assignment deadline exceeded",
+                        })
+                    last_result = result
+                    if result.get("status") == "completed":
+                        return result
+                    if not result.get("retryable") or attempt >= 2:
+                        return result
+                    run.ledger.trace(
+                        assignment["worker"], "assignment_retry",
+                        assignment_id=assignment["assignment_id"], run_id=run_id,
+                        assignment_attempt=attempt,
+                        error_type=result.get("error_type", "unknown"),
+                    )
+                if last_result is not None:
+                    return last_result
+                return {
+                    "assignment_id": assignment["assignment_id"],
+                    "run_id": run_id, "worker": assignment["worker"],
+                    "revision_round": revision_round, "status": "timed_out",
+                    "assignment_attempt": 0, "attempt_duration_ms": 0,
+                    "deadline_seconds": float(self.default_time_budget),
+                    "error_type": "assignment_deadline", "retryable": False,
+                    "error": "assignment deadline exceeded before the first attempt",
+                    "findings": [], "evidence_inventory": [],
+                }
+
             return session.runtime.run(
                 session.sub(EXECUTING, "work:%s" % run_id),
-                lambda: {"result": self._worker_result(
-                    session, run, assignment, run_id, scanner_findings,
-                    revision_round, memory_context,
-                )},
+                lambda: {"result": attempt_assignment()},
                 "%s is working on %s" % (assignment["worker"], run_id),
                 retries=0,
             )
@@ -1120,7 +1193,7 @@ class AgenticReviewer(Reviewer):
 
     def _worker_result(
         self, session, run, assignment, run_id, scanner_findings,
-        revision_round, memory_context,
+        revision_round, memory_context, time_budget=None,
     ) -> dict:
         """Always returns a result record: a failed worker is data, not an outage."""
         parsed, ledger, available_skills = session.parsed, run.ledger, run.skills
@@ -1132,9 +1205,11 @@ class AgenticReviewer(Reviewer):
         try:
             raw_result = self._run_worker(
                 session, run, assignment, scanner_findings, memory_context,
+                time_budget=time_budget,
             )
             findings = parse_findings(
                 raw_result, parsed, assignment["worker"], validated_skill_names,
+                self._recalled_lesson_ids(memory_context),
             )
             hypotheses = normalize_hypotheses(raw_result.get("hypotheses"))
             requirement_resolutions = normalize_requirement_resolutions(
@@ -1158,6 +1233,7 @@ class AgenticReviewer(Reviewer):
                 "revision_round": revision_round, "status": "completed",
                 "repository_context_available": bool(run.suite.repository_available),
                 "findings": [item.to_dict() for item in findings], "error": "",
+                "error_type": "", "retryable": False,
                 "assignment_requirements": assignment_requirements(assignment),
                 "requirement_resolutions": requirement_resolutions,
                 "hypotheses": hypotheses,
@@ -1192,13 +1268,17 @@ class AgenticReviewer(Reviewer):
                     if isinstance(item, dict)
                 ][:20],
             }
+        except TaskCancelled:
+            raise
         except Exception as exc:
+            error_type, retryable, status = self._classify_assignment_error(exc)
             result = {
                 "assignment_id": assignment["assignment_id"],
                 "run_id": run_id, "worker": assignment["worker"],
-                "revision_round": revision_round, "status": "failed",
+                "revision_round": revision_round, "status": status,
                 "repository_context_available": bool(run.suite.repository_available),
                 "findings": [], "error": str(exc)[:1000],
+                "error_type": error_type, "retryable": retryable,
                 "assignment_requirements": assignment_requirements(assignment),
                 "requirement_resolutions": [], "hypotheses": [],
                 "handoffs": [], "handled_handoff_ids": [],
@@ -1213,6 +1293,37 @@ class AgenticReviewer(Reviewer):
             findings=len(result["findings"]), revision_round=revision_round,
         )
         return result
+
+    @staticmethod
+    def _classify_assignment_error(exc):
+        """Classify a whole-role failure without introducing another runtime."""
+        message = str(exc).lower()
+        if isinstance(exc, BudgetExceeded):
+            return "assignment_budget", False, "timed_out"
+        if isinstance(exc, TimeoutError) or "timed out" in message or "timeout" in message:
+            return "request_timeout", True, "failed"
+        if isinstance(exc, (ValueError, PermissionError, ToolProtocolError)):
+            return "invalid_assignment_output", False, "failed"
+        if any(token in message for token in (
+            "unauthorized", "forbidden", "invalid tool", "protocol violation",
+        )):
+            return "invalid_assignment_output", False, "failed"
+        if isinstance(exc, (RuntimeError, ConnectionError, OSError)):
+            return "transient_worker_failure", True, "failed"
+        return type(exc).__name__.lower(), False, "failed"
+
+    @staticmethod
+    def _recalled_lesson_ids(memory_context):
+        """Return only durable lesson IDs exposed in this run's model context."""
+        if not isinstance(memory_context, dict):
+            return set()
+        return {
+            str(item.get("memory_id"))
+            for item in (memory_context or {}).get("items") or []
+            if isinstance(item, dict)
+            and item.get("kind") == "repository_lesson"
+            and str(item.get("memory_id") or "")
+        }
 
     @staticmethod
     def _worker_validator(parsed, assignment, repository_available):
@@ -1262,6 +1373,7 @@ class AgenticReviewer(Reviewer):
 
     def _run_worker(
         self, session, run, assignment, scanner_findings, memory_context,
+        time_budget=None,
     ):
         parsed, suite, ledger = session.parsed, run.suite, run.ledger
         available_skills = run.skills
@@ -1288,7 +1400,10 @@ class AgenticReviewer(Reviewer):
         )
         role = AgentLoop(
             worker, prompt, self.client,
-            self._token_budget(worker), self.default_time_budget,
+            self._token_budget(worker), (
+                self.default_time_budget if time_budget is None
+                else max(0.01, float(time_budget))
+            ),
             context_manager=self.context_manager,
             working_memory_supplier=working_memory_supplier,
             observation_sink=observation_sink,
@@ -1357,9 +1472,9 @@ class AgenticReviewer(Reviewer):
             "changed_files": parsed.files,
             "scoreable_added_lines": [
                 {"path": item.path, "line": item.line, "content": item.content}
-                for item in parsed.added_lines[:200]
+                for item in parsed.added_lines
                 if item.path in (assignment.get("files") or parsed.files)
-            ],
+            ][:200],
             "scanner_findings": scanner_findings,
             "repository_context_available": suite.repository_available,
             "recalled_memory": memory_context or {"items": []},
@@ -1433,11 +1548,15 @@ class AgenticReviewer(Reviewer):
                 if isinstance(evidence, dict):
                     evidence.setdefault("origin", "deterministic-scanner")
         ledger.record_tool(
-            "agentic-scanner", "local-rule-scanner", {"added_lines": len(parsed.added_lines)},
-            True, int((time.monotonic() - started) * 1000),
+            "agentic-scanner", "local-rule-scanner",
+            {"added_lines": len(parsed.added_lines)}, True,
+            int((time.monotonic() - started) * 1000),
             {"findings": len(findings)},
         )
-        scanners = list(scanners or [])
+        scanners = [
+            scanner for scanner in scanners or []
+            if not isinstance(scanner, LocalRuleReviewer)
+        ]
         for scanner in scanners:
             scanner_started = time.monotonic()
             name = scanner_name(scanner.name)
@@ -1531,30 +1650,11 @@ class AgenticReviewer(Reviewer):
     def _persist_task_memory(
         self, task_id, tenant_id, repository, findings, gated, files, collaboration,
     ):
-        """Turn verified decisions into reusable episodes and clear Working Memory."""
+        """Clear task evidence; only explicit human feedback creates lessons."""
         if self.memory_manager is None:
             return
         try:
-            for finding in findings:
-                gate = getattr(finding, "gate", {}) or {}
-                self.memory_manager.remember_finding(
-                    tenant_id, repository, task_id, finding.to_dict(),
-                    bool(gate.get("passed")), gate.get("reasons") or (),
-                )
-            accepted = [
-                {
-                    "rule_id": item.rule_id, "path": item.path, "line": item.line,
-                    "severity": item.severity.value, "confidence": item.confidence,
-                }
-                for item in gated.accepted[:50]
-            ]
-            self.memory_manager.consolidate_task(tenant_id, repository, task_id, {
-                "schema_version": 1, "files": list(files)[:100],
-                "accepted_findings": accepted,
-                "rejected_findings": list(gated.rejected)[:50],
-                "gate_checks": dict(gated.checks),
-                "agent_roles": list(collaboration.get("roles") or []),
-            })
+            self.memory_manager.forget_working(task_id)
         except Exception:
             # Memory must enrich a review, not turn a completed review into a failure.
             return

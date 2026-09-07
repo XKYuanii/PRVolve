@@ -1,4 +1,9 @@
-"""Tenant-aware working, episodic and semantic memory for review agents."""
+"""Task evidence and verified repository lessons for review agents.
+
+The store retains the historical scope names for compatibility. Product code
+uses ``working`` for task-scoped recovery evidence and ``semantic`` for durable,
+human- or test-verified repository lessons.
+"""
 from datetime import datetime, timedelta, timezone
 import hashlib
 import json
@@ -20,7 +25,7 @@ class MemoryManager:
     """Persist and retrieve bounded memories without hiding store side effects."""
 
     def __init__(
-        self, store, enabled: bool = True, recall_limit: int = 6,
+        self, store, enabled: bool = True, recall_limit: int = 3,
         working_ttl_seconds: int = 86400,
     ):
         self.store = store
@@ -41,10 +46,26 @@ class MemoryManager:
         importance = max(0.0, min(1.0, float(importance)))
         metadata = dict(metadata or {})
         normalized = content.strip()[:8000]
-        fingerprint = json.dumps({
+        identity = {
             "tenant": tenant_id, "repository": repository, "scope": scope,
             "kind": kind, "content": normalized, "metadata": metadata,
-        }, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+        }
+        # Working observations belong to one task and one role.  Omitting this
+        # ownership made identical tool output in a later PR collide with the
+        # earlier row, leaving the new task unable to recall what it just wrote.
+        if scope == "working":
+            identity.update({"task_id": task_id, "agent": agent})
+        elif scope == "semantic" and kind == "repository_lesson":
+            # Provenance fields describe confirmations, not lesson identity.
+            # Repeated confirmation of the same statement should not create an
+            # ever-growing set of near-identical long-term memories.
+            identity["metadata"] = {
+                key: metadata.get(key)
+                for key in ("lesson_kind", "category", "path_pattern", "symbol")
+            }
+        fingerprint = json.dumps(
+            identity, ensure_ascii=False, sort_keys=True, separators=(",", ":"),
+        )
         memory_id = hashlib.sha256(fingerprint.encode("utf-8")).hexdigest()
         ttl = self.working_ttl_seconds if scope == "working" and ttl_seconds is None else ttl_seconds
         expires_at = None
@@ -84,26 +105,61 @@ class MemoryManager:
             ]
         query_tokens = _tokens(query)
         ranked = []
+        fallbacks = []
+        query_lower = query.lower()
         for index, item in enumerate(candidates):
+            metadata = dict(item.get("metadata") or {})
+            status = str(metadata.get("status", "active")).lower()
+            if status == "refuted":
+                continue
             memory_tokens = set(item.get("keywords") or []) | _tokens(item.get("content", ""))
             overlap = len(query_tokens.intersection(memory_tokens))
             coverage = overlap / max(1, len(query_tokens))
             specificity = overlap / max(1, len(memory_tokens))
+            path_pattern = str(metadata.get("path_pattern", "")).lower()
+            symbol = str(metadata.get("symbol", "")).lower()
+            path_match = bool(path_pattern and path_pattern in query_lower)
+            symbol_match = bool(symbol and symbol in query_lower)
             score = (
-                coverage * 0.55 + specificity * 0.15
-                + float(item.get("importance", 0.5)) * 0.25
+                coverage * 0.35 + specificity * 0.10
+                + (0.25 if path_match else 0.0)
+                + (0.20 if symbol_match else 0.0)
+                + float(item.get("importance", 0.5)) * 0.08
+                + (0.05 if metadata.get("verified_by") in {"human", "test"} else 0.0)
+                + (-0.10 if status == "stale" else 0.0)
                 + (0.05 / (index + 1))
             )
-            if query_tokens and overlap == 0 and item.get("scope") != "semantic":
-                continue
             value = dict(item)
             value["recall_score"] = round(score, 4)
+            value["semantic_fallback"] = False
+            if query_tokens and overlap == 0 and not path_match and not symbol_match:
+                if item.get("scope") != "semantic":
+                    continue
+                verified = metadata.get("verified_by") in {"human", "test"} or (
+                    item.get("kind") == "review_feedback"
+                )
+                if not verified:
+                    continue
+                repository_wide = bool(metadata.get("repository_wide")) or not (
+                    path_pattern or symbol
+                )
+                if not repository_wide:
+                    continue
+                value["semantic_fallback"] = True
+                fallbacks.append(value)
+                continue
             ranked.append(value)
         size = max(1, limit or self.recall_limit)
-        return sorted(
+        relevant = sorted(
             ranked,
             key=lambda item: (-item["recall_score"], item.get("created_at", "")),
         )[:size]
+        if len(relevant) < size and fallbacks:
+            relevant.append(sorted(
+                fallbacks,
+                key=lambda item: (-item["recall_score"], item.get("created_at", "")),
+            )[0])
+        return relevant
 
     def recall_working(
         self, tenant_id: str, repository: str, task_id: str, query: str = "",
@@ -157,6 +213,7 @@ class MemoryManager:
         self, tenant_id: str, repository: str, task_id: str,
         finding: Dict[str, Any], approved: bool, reasons: Iterable[str] = (),
     ) -> Optional[Dict[str, Any]]:
+        """Compatibility hook; completed reviews no longer call this automatically."""
         decision = "approved" if approved else "rejected"
         content = (
             "%s finding %s at %s:%s. Evidence: %s. Explanation: %s. "
@@ -176,16 +233,33 @@ class MemoryManager:
     def remember_feedback(
         self, tenant_id: str, repository: str, task_id: str, category: str,
         finding: Optional[Dict[str, Any]], note: str,
+        review_context: Optional[Dict[str, Any]] = None,
     ) -> Optional[Dict[str, Any]]:
         finding = dict(finding or {})
-        content = "Feedback %s for %s at %s:%s. Note: %s" % (
+        if category not in {"false_positive", "missed_issue", "bad_fix"}:
+            return None
+        lesson_kind = {
+            "false_positive": "false_positive_rule",
+            "missed_issue": "review_check",
+            "bad_fix": "fix_constraint",
+        }[category]
+        path = str(finding.get("path", ""))
+        symbol = str(finding.get("symbol", ""))
+        content = "Verified repository lesson %s for %s at %s:%s. Note: %s" % (
             category, finding.get("rule_id", "task"), finding.get("path", ""),
             finding.get("line", 0), note,
         )
         return self.remember(
-            tenant_id, repository, "semantic", "review_feedback", content,
-            {"category": category, "finding": finding}, task_id=task_id,
-            importance=0.95 if category in {"false_positive", "missed_issue", "bad_fix"} else 0.7,
+            tenant_id, repository, "semantic", "repository_lesson", content,
+            {
+                "lesson_kind": lesson_kind, "category": category,
+                "finding": finding, "path_pattern": path, "symbol": symbol,
+                "verified_by": "human", "status": "active",
+                "repository_wide": not bool(path or symbol),
+                "origin_task_id": task_id,
+                "diff_sha256": str((review_context or {}).get("diff_sha256", "")),
+                "source": str((review_context or {}).get("source", "")),
+            }, task_id=task_id, importance=0.95,
         )
 
     def forget_working(self, task_id: str) -> int:
@@ -197,17 +271,8 @@ class MemoryManager:
         self, tenant_id: str, repository: str, task_id: str,
         summary: Dict[str, Any],
     ) -> Optional[Dict[str, Any]]:
-        """Archive a compact task episode, then release transient working memory."""
+        """Release transient task evidence without promoting it to long-term memory."""
         if not self.enabled or not task_id:
             return None
-        content = "Review task %s completed: %s" % (
-            task_id,
-            json.dumps(summary, ensure_ascii=False, sort_keys=True, separators=(",", ":")),
-        )
-        archived = self.remember(
-            tenant_id, repository, "episodic", "task_summary", content,
-            metadata={"summary": dict(summary)}, task_id=task_id,
-            agent="agent-runtime", importance=0.65,
-        )
         self.forget_working(task_id)
-        return archived
+        return None

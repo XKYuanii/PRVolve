@@ -11,6 +11,7 @@ steps and tens of seconds, so a crash re-runs the role rather than restoring it;
 resumable progress lives one layer up, in ``review.pipeline``.
 """
 import json
+import inspect
 import re
 import time
 from typing import Any, Callable, Dict, List, Optional
@@ -138,6 +139,7 @@ class AgentLoop:
         nudged = False
         correction_requested = False
         invalid_action_retried = False
+        working_memory_loaded = False
         starting_tokens = ledger.tokens_used(self.name)
         ledger.trace(
             self.name, "started", token_budget=self.token_budget,
@@ -164,14 +166,16 @@ class AgentLoop:
                 ),
             )
             current_context = user_context
-            if self.working_memory_supplier is not None:
+            if self.working_memory_supplier is not None and not working_memory_loaded:
                 try:
                     working = self.working_memory_supplier()
+                    working_memory_loaded = True
                     if working:
                         task_context = json.loads(user_context)
                         task_context["working_memory"] = working
                         current_context = json.dumps(task_context, ensure_ascii=False)
                 except Exception as exc:
+                    working_memory_loaded = True
                     ledger.trace(
                         self.name, "working_memory_unavailable", error=str(exc)[:500],
                     )
@@ -188,10 +192,19 @@ class AgentLoop:
                 observations_summarized=context_stats["observations"]["summarized"],
                 observations_dropped=context_stats["observations"]["dropped"],
             )
-            action = self.client.complete_json(
+            complete = self.client.complete_json
+            call_kwargs = {"max_tokens": output_allowance}
+            try:
+                if "timeout_seconds" in inspect.signature(complete).parameters:
+                    call_kwargs["timeout_seconds"] = max(
+                        0.01, self.time_budget - (time.monotonic() - started),
+                    )
+            except (TypeError, ValueError):
+                pass
+            action = complete(
                 self.name, self.prompt,
                 json.dumps(managed, ensure_ascii=False, default=str),
-                ledger, max_tokens=output_allowance,
+                ledger, **call_kwargs,
             )
             kind = str(action.get("action", "")).strip().lower()
             ledger.trace(

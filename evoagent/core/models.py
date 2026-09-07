@@ -53,6 +53,9 @@ class Finding:
     gate: Dict[str, Any] = field(default_factory=dict)
     original_rule_id: str = ""
     disposition: str = "candidate"
+    # Model-declared influence, restricted to repository lessons actually
+    # recalled for this run. These IDs are provenance, never defect evidence.
+    used_lesson_ids: List[str] = field(default_factory=list)
 
     def to_dict(self) -> Dict[str, Any]:
         value = asdict(self)

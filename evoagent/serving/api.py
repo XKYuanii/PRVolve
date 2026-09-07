@@ -452,6 +452,11 @@ class ApiHandler(BaseHTTPRequestHandler):
                 result = self.service.releases.configure(
                     principal.tenant_id, "llm-review", payload
                 )
+                result["execution_routing"] = "not_connected"
+                result["note"] = (
+                    "Deployment metadata is stored, but review tasks remain on the active "
+                    "stable policy until version-aware lane routing is implemented."
+                )
                 self.service.store.audit(
                     principal.tenant_id, principal.username, "deployment.configure",
                     "llm-review", payload,
@@ -484,8 +489,6 @@ class ApiHandler(BaseHTTPRequestHandler):
                 result = self.service.evolution.auto_propose(
                     str(payload.get("skill_name", "llm-review")), principal.tenant_id
                 )
-                if result["decision"] == "activated":
-                    self.service.reload_skills()
                 self._send_json(201, result)
                 return
             if path == "/v1/evolution/propose":
@@ -501,6 +504,15 @@ class ApiHandler(BaseHTTPRequestHandler):
                 return
             if path == "/v1/skill-evolution/auto":
                 principal = self._principal("manage")
+                if not self.settings.experimental_skill_evolution_enabled:
+                    self._send_json(409, {
+                        "error": "automatic Agent Skill evolution is experimental and disabled",
+                        "next": (
+                            "Use Review Policy evolution, or explicitly enable "
+                            "EVOAGENT_EXPERIMENTAL_SKILL_EVOLUTION_ENABLED."
+                        ),
+                    })
+                    return
                 payload = self._read_json(body)
                 result = self.service.skill_evolution.auto_propose(
                     str(payload.get("skill_name", "evolved-review")), principal.tenant_id

@@ -11,7 +11,7 @@ import hashlib
 import json
 import os
 import re
-from typing import Any, Dict, Iterable, List, Set
+from typing import Any, Callable, Dict, Iterable, List, Optional, Set
 
 from ..core.diff_parser import parse_unified_diff
 from ..eval.benchmark import ContextRuleReviewer
@@ -165,8 +165,11 @@ def _prompt_sha256(prompt: str) -> str:
     return hashlib.sha256(prompt.encode("utf-8")).hexdigest()
 
 
-def _collect_feedback(store: TaskStore, cases: Iterable[dict], prompt: str) -> List[dict]:
-    reviewer = PromptPolicyReviewer(prompt)
+def _collect_feedback(
+    store: TaskStore, cases: Iterable[dict], prompt: str,
+    reviewer_factory: Callable[[str], Reviewer],
+) -> List[dict]:
+    reviewer = reviewer_factory(prompt)
     feedback = []
     for case in cases:
         if case["split"] != "validation":
@@ -209,9 +212,25 @@ def _metric_delta(candidate: dict, baseline: dict) -> dict:
     }
 
 
-def run_prompt_evolution_proof(dataset_path: str, database_path: str) -> Dict[str, Any]:
-    """Run a fresh, reproducible prompt-version evolution experiment."""
+def run_prompt_evolution_proof(
+    dataset_path: str, database_path: str,
+    reviewer_factory: Optional[Callable[[str], Reviewer]] = None,
+    candidate_generator=None, reviewer_mode: str = "deterministic",
+    max_cases_per_split: int = 0,
+    reviewer_metadata: Optional[Dict[str, Any]] = None,
+) -> Dict[str, Any]:
+    """Run the same evolution pipeline with a controlled or production reviewer."""
     cases = load_jsonl(dataset_path)
+    if max_cases_per_split > 0:
+        cases = [
+            case
+            for split in ("validation", "holdout")
+            for case in [
+                value for value in cases
+                if value.get("split", "validation") == split
+            ][:max_cases_per_split]
+        ]
+    reviewer_factory = reviewer_factory or PromptPolicyReviewer
     source_kinds = sorted({
         str((case.get("source") or {}).get("kind", "unknown")) for case in cases
     })
@@ -223,17 +242,17 @@ def run_prompt_evolution_proof(dataset_path: str, database_path: str) -> Dict[st
             case["source"], True,
         )
 
-    baseline_validation = RegressionEvaluator(PromptPolicyReviewer).run(
+    baseline_validation = RegressionEvaluator(reviewer_factory).run(
         DEFAULT_PROMPT,
         store.list_evaluation_cases("validation", True, len(cases)),
     )
     store.save_skill_version(
         "llm-review", DEFAULT_PROMPT, baseline_validation["score"], activate=True
     )
-    feedback = _collect_feedback(store, cases, DEFAULT_PROMPT)
+    feedback = _collect_feedback(store, cases, DEFAULT_PROMPT, reviewer_factory)
     engine = EvolutionEngine(
         store,
-        reviewer_factory=PromptPolicyReviewer,
+        reviewer_factory=reviewer_factory,
         min_cases=sum(case["split"] == "validation" for case in cases),
         max_cases=len(cases),
         min_improvement=0.02,
@@ -242,30 +261,56 @@ def run_prompt_evolution_proof(dataset_path: str, database_path: str) -> Dict[st
         # explicit and still protected by the score/F1/holdout gates.
         max_metric_regression=0.02,
         seed_defaults=False,
+        candidate_generator=candidate_generator,
     )
     result = engine.auto_propose("llm-review")
+    manual_activation = False
+    if result.get("decision") == "candidate_ready" and result.get("version"):
+        manual_activation = engine.rollback(
+            "llm-review", int(result["version"]["version"]),
+        )
     active = store.get_active_skill_version("llm-review")
     versions = list(reversed(store.list_skill_versions("llm-review")))
-    runs = store.list_evolution_runs()
-    candidate_prompt = active["prompt"] if active else DEFAULT_PROMPT
+    candidate_version = (
+        int(result["version"]["version"])
+        if isinstance(result.get("version"), dict) else None
+    )
+    candidate_record = next((
+        item for item in versions if int(item["version"]) == candidate_version
+    ), None)
+    candidate_prompt = (
+        candidate_record["prompt"] if candidate_record else
+        (active["prompt"] if active else DEFAULT_PROMPT)
+    )
 
     all_cases = store.list_evaluation_cases(None, True, len(cases))
-    evaluator = RegressionEvaluator(PromptPolicyReviewer)
+    evaluator = RegressionEvaluator(reviewer_factory)
     baseline_all = evaluator.run(DEFAULT_PROMPT, all_cases)
     candidate_all = evaluator.run(candidate_prompt, all_cases)
     provenance_passed = source_kinds == ["public-github-pr"]
-    quantitative_passed = result.get("decision") == "activated"
+    quantitative_passed = result.get("decision") in {"activated", "candidate_ready"}
     return {
         "schema_version": 1,
         "generated_at": utc_now(),
         "claim_scope": {
-            "level": "controlled-offline-behavioral-evolution",
+            "level": (
+                "controlled-offline-behavioral-evolution"
+                if reviewer_mode == "deterministic" else
+                "external-llm-offline-evolution-experiment"
+            ),
+            "reviewer_mode": reviewer_mode,
+            "reviewer": dict(reviewer_metadata or {}),
             "proves": (
-                "Feedback automatically produced a new prompt version; the same reviewer "
-                "changed behavior and passed validation improvement plus holdout non-regression."
+                "Feedback, prompt versioning, paired replay and holdout gates were exercised; "
+                "the recorded gate decision was %s and explicit activation was %s."
+                % (
+                    result.get("decision", "unknown"),
+                    "performed" if manual_activation else "not performed",
+                )
             ),
             "does_not_prove": (
-                "External LLM weight improvement or production performance on real GitHub PRs."
+                "LLM weight improvement, online canary behavior, or production performance "
+                "on real GitHub PRs."
             ),
         },
         "dataset": {
@@ -276,12 +321,12 @@ def run_prompt_evolution_proof(dataset_path: str, database_path: str) -> Dict[st
             "repositories": len({case["repository"] for case in cases}),
             "source_kinds": source_kinds,
             "sha256": dataset_fingerprint(cases),
-            "validation_sha256": result["gates"] and runs[0]["metrics"]["reproducibility"][
-                "validation_dataset_sha256"
-            ],
-            "holdout_sha256": result["gates"] and runs[0]["metrics"]["reproducibility"][
-                "holdout_dataset_sha256"
-            ],
+            "validation_sha256": dataset_fingerprint([
+                case for case in cases if case.get("split", "validation") == "validation"
+            ]),
+            "holdout_sha256": dataset_fingerprint([
+                case for case in cases if case.get("split", "validation") == "holdout"
+            ]),
         },
         "feedback": {
             "missed_findings": len(feedback),
@@ -306,6 +351,8 @@ def run_prompt_evolution_proof(dataset_path: str, database_path: str) -> Dict[st
             "reason": result.get("reason"),
             "failure_cases_used": result.get("failure_cases_used"),
             "gates": result.get("gates"),
+            "manual_activation": manual_activation,
+            "candidate_change": result.get("candidate_change"),
         },
         "validation": {
             "baseline": result["baseline"],
@@ -346,6 +393,10 @@ def render_markdown(report: Dict[str, Any]) -> str:
         "## 结论",
         "",
         "- 进化决策：`%s`" % report["evolution_run"]["decision"],
+        "- Reviewer 模式：`%s`" % report["claim_scope"].get("reviewer_mode", "unknown"),
+        "- 人工激活：`%s`" % (
+            "YES" if report["evolution_run"].get("manual_activation") else "NO"
+        ),
         "- 数值门禁：`%s`" % (
             "PASS" if report["release_gate"]["quantitative_passed"] else "FAIL"
         ),

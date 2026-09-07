@@ -52,6 +52,7 @@ class JsonChatClient:
         self, role: str, system: str, user: str,
         ledger: Optional[ExecutionLedger] = None,
         max_tokens: Optional[int] = None,
+        timeout_seconds: Optional[float] = None,
     ) -> Dict[str, Any]:
         messages = [
             {"role": "system", "content": system},
@@ -81,7 +82,14 @@ class JsonChatClient:
         headers.update(self.extra_headers)
         max_attempts = 3
         structured_retry_used = False
+        deadline = (
+            time.monotonic() + max(0.01, float(timeout_seconds))
+            if timeout_seconds is not None else None
+        )
         for attempt in range(max_attempts):
+            remaining = deadline - time.monotonic() if deadline is not None else None
+            if remaining is not None and remaining <= 0:
+                raise TimeoutError("%s request deadline exceeded" % self.provider)
             payload["messages"] = messages
             request = urllib.request.Request(
                 self.base_url + "/chat/completions",
@@ -91,7 +99,15 @@ class JsonChatClient:
             started = time.monotonic()
             body: Dict[str, Any] = {}
             try:
-                with urllib.request.urlopen(request, timeout=self.timeout) as response:
+                request_timeout = self.timeout
+                if remaining is not None:
+                    request_timeout = max(0.01, min(float(self.timeout), remaining))
+                if ledger:
+                    ledger.trace(
+                        role, "request_attempt", request_attempt=attempt + 1,
+                        timeout_seconds=round(float(request_timeout), 3),
+                    )
+                with urllib.request.urlopen(request, timeout=request_timeout) as response:
                     body = json.loads(response.read().decode("utf-8"))
                 content = str(body["choices"][0]["message"]["content"])
             except urllib.error.HTTPError as exc:
@@ -169,7 +185,12 @@ class JsonChatClient:
                     int((time.monotonic() - started) * 1000), False, message,
                 )
             if retryable and attempt < max_attempts - 1:
-                time.sleep(min(0.25 * (2 ** attempt), 1.0))
+                delay = min(0.25 * (2 ** attempt), 1.0)
+                if deadline is not None:
+                    delay = min(delay, max(0.0, deadline - time.monotonic()))
+                    if delay <= 0:
+                        raise TimeoutError("%s request deadline exceeded" % self.provider)
+                time.sleep(delay)
                 continue
             raise RuntimeError(message)
         raise RuntimeError("%s JSON request failed" % self.provider)

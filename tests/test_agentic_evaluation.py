@@ -1723,6 +1723,43 @@ class AgenticEvaluationTests(unittest.TestCase):
         self.assertEqual(1, len(findings))
         self.assertEqual(2, findings[0].line)
 
+    def test_finding_lesson_attribution_accepts_only_recalled_ids(self):
+        parsed = parse_unified_diff(
+            "--- a/app.py\n+++ b/app.py\n@@ -0,0 +1 @@\n+consume(value)\n"
+        )
+        result = {"findings": [{
+            "rule_id": "CWE-248", "severity": "medium",
+            "title": "Invalid value crashes", "explanation": "The call raises.",
+            "path": "app.py", "line": 1, "evidence": "consume(value)",
+            "fix": "Validate value.", "test": "Exercise invalid value.",
+            "used_lesson_ids": ["lesson-valid", "lesson-invented", "lesson-valid"],
+        }]}
+
+        findings = parse_findings(
+            result, parsed, "correctness-reliability",
+            recalled_lesson_ids={"lesson-valid"},
+        )
+
+        self.assertEqual(["lesson-valid"], findings[0].used_lesson_ids)
+        self.assertNotIn("lesson-invented", findings[0].to_dict()["used_lesson_ids"])
+
+    def test_merged_findings_preserve_all_valid_lesson_attribution(self):
+        first = Finding(
+            "CWE-248", Severity.HIGH, "Crash", "Allowed input raises.",
+            "app.py", 1, "consume(value)", "Validate.", "Test invalid input.",
+            used_lesson_ids=["lesson-a"],
+        )
+        second = Finding(
+            "CWE-248", Severity.HIGH, "Crash", "Allowed input raises.",
+            "app.py", 1, "consume(value)", "Validate.", "Test invalid input.",
+            confidence=0.9, used_lesson_ids=["lesson-b", "lesson-a"],
+        )
+
+        merged = merge_findings([first, second])
+
+        self.assertEqual(1, len(merged))
+        self.assertEqual({"lesson-a", "lesson-b"}, set(merged[0].used_lesson_ids))
+
     def test_worker_validation_rejects_any_unscoreable_structured_finding(self):
         parsed = parse_unified_diff(
             "--- a/app.py\n+++ b/app.py\n@@ -0,0 +1 @@\n+consume(value)\n"

@@ -4,7 +4,12 @@ import time
 import unittest
 
 from evoagent.config import Settings
-from evoagent.evolution.engine import EvolutionEngine, RegressionEvaluator
+from evoagent.evolution.engine import (
+    BUILTIN_EVALUATION_DATASET_VERSION,
+    DEFAULT_EVALUATION_CASES,
+    EvolutionEngine,
+    RegressionEvaluator,
+)
 from evoagent.review.fixer import SafeFixer
 from evoagent.core.models import Finding, Severity
 from evoagent.serving.service import ReviewService
@@ -110,7 +115,8 @@ class AdvancedFeatureTests(unittest.TestCase):
 
         engine = EvolutionEngine(
             store, reviewer_factory=PromptAwareReviewer, min_cases=1,
-            max_cases=1, min_improvement=0.01, seed_defaults=False,
+            max_cases=1, min_improvement=0.01, min_holdout_cases=0,
+            seed_defaults=False,
         )
         result = engine.propose(
             "llm-review",
@@ -252,6 +258,7 @@ class AdvancedFeatureTests(unittest.TestCase):
         )
         result = EvolutionEngine(store, seed_defaults=False).auto_propose("llm-review")
         self.assertEqual(["SEC-WEAK-HASH"], result["learned_rule_ids"])
+        self.assertEqual("deferred", result["decision"])
         version = store.list_skill_versions("llm-review")[0]
         self.assertIn("[focus-rule:SEC-WEAK-HASH]", version["prompt"])
         self.assertNotIn("ignore previous instructions", version["prompt"])
@@ -270,6 +277,32 @@ class AdvancedFeatureTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "immutable"):
             store.save_evaluation_case(
                 "stable-case-v1", "validation", diff, [], "test"
+            )
+
+    def test_builtin_evolution_gate_dataset_is_versioned_and_large_enough(self):
+        store = TaskStore(self.path)
+        engine = EvolutionEngine(store)
+
+        validation = store.list_evaluation_cases("validation", True, 100)
+        holdout = store.list_evaluation_cases("holdout", True, 100)
+        self.assertEqual(16, len(validation))
+        self.assertEqual(4, len(holdout))
+        self.assertEqual(20, len(DEFAULT_EVALUATION_CASES))
+        self.assertEqual(10, sum(bool(case["expected"]) for case in validation))
+        self.assertEqual(2, sum(bool(case["expected"]) for case in holdout))
+        self.assertTrue(all(
+            case["source"] == "builtin:%s" % BUILTIN_EVALUATION_DATASET_VERSION
+            for case in validation + holdout
+        ))
+        self.assertEqual(
+            BUILTIN_EVALUATION_DATASET_VERSION,
+            engine.status()["builtin_dataset_version"],
+        )
+        self.assertTrue(engine.status()["ready"] is False)
+        for case in DEFAULT_EVALUATION_CASES:
+            engine.validate_case(
+                case["name"], case["diff"], case["expected"],
+                case.get("split", "validation"),
             )
 
     def test_async_multi_agent_review(self):

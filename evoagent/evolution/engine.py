@@ -14,6 +14,10 @@ DEFAULT_PROMPT = (
     "Report only actionable defects introduced by added lines."
 )
 
+BUILTIN_EVALUATION_DATASET_VERSION = "evolution-gate-v2"
+
+# Case names and contents are immutable in the store. A future corpus revision must
+# bump this version and use new names for every changed case.
 DEFAULT_EVALUATION_CASES = [
     {
         "name": "security-dynamic-execution",
@@ -41,6 +45,61 @@ DEFAULT_EVALUATION_CASES = [
         "expected": [],
     },
     {
+        "name": "security-sql-interpolation",
+        "diff": "--- a/users.py\n+++ b/users.py\n@@ -1 +1 @@\n-old\n+cursor.execute(f\"SELECT * FROM users WHERE name = '{name}'\")\n",
+        "expected": [{"path": "users.py", "line": 1, "min_severity": "high"}],
+    },
+    {
+        "name": "security-command-injection",
+        "diff": "--- a/images.py\n+++ b/images.py\n@@ -1 +1 @@\n-old\n+os.system(\"convert \" + filename)\n",
+        "expected": [{"path": "images.py", "line": 1, "min_severity": "high"}],
+    },
+    {
+        "name": "security-unsafe-deserialization",
+        "diff": "--- a/profile.py\n+++ b/profile.py\n@@ -1 +1 @@\n-old\n+profile = pickle.loads(request.body)\n",
+        "expected": [{"path": "profile.py", "line": 1, "min_severity": "critical"}],
+    },
+    {
+        "name": "security-tls-verification-disabled",
+        "diff": "--- a/client.py\n+++ b/client.py\n@@ -1 +1 @@\n-old\n+response = requests.get(service_url, verify=False)\n",
+        "expected": [{"path": "client.py", "line": 1, "min_severity": "high"}],
+    },
+    {
+        "name": "security-weak-password-hash",
+        "diff": "--- a/passwords.py\n+++ b/passwords.py\n@@ -1 +1 @@\n-old\n+digest = hashlib.md5(password.encode()).hexdigest()\n",
+        "expected": [{"path": "passwords.py", "line": 1, "min_severity": "high"}],
+    },
+    {
+        "name": "security-predictable-reset-token",
+        "diff": "--- a/tokens.py\n+++ b/tokens.py\n@@ -1 +1 @@\n-old\n+reset_token = str(random.random())\n",
+        "expected": [{"path": "tokens.py", "line": 1, "min_severity": "high"}],
+    },
+    {
+        "name": "reliability-unbounded-http-call",
+        "diff": "--- a/upstream.py\n+++ b/upstream.py\n@@ -1 +1 @@\n-old\n+response = requests.get(service_url)\n",
+        "expected": [{"path": "upstream.py", "line": 1, "min_severity": "medium"}],
+    },
+    {
+        "name": "clean-subprocess-argv",
+        "diff": "--- a/repository.py\n+++ b/repository.py\n@@ -1 +1 @@\n-old\n+subprocess.run([\"git\", \"status\"], check=True, timeout=30)\n",
+        "expected": [],
+    },
+    {
+        "name": "clean-password-kdf",
+        "diff": "--- a/passwords.py\n+++ b/passwords.py\n@@ -1 +1 @@\n-old\n+digest = hashlib.scrypt(password, salt=salt, n=16384, r=8, p=1)\n",
+        "expected": [],
+    },
+    {
+        "name": "clean-json-deserialization",
+        "diff": "--- a/profile.py\n+++ b/profile.py\n@@ -1 +1 @@\n-old\n+profile = json.loads(request.body)\n",
+        "expected": [],
+    },
+    {
+        "name": "clean-http-timeout",
+        "diff": "--- a/upstream.py\n+++ b/upstream.py\n@@ -1 +1 @@\n-old\n+response = requests.get(service_url, timeout=5)\n",
+        "expected": [],
+    },
+    {
         "name": "holdout-security-shell-execution",
         "split": "holdout",
         "diff": "--- a/runner.py\n+++ b/runner.py\n@@ -1 +1 @@\n-old\n+subprocess.run(command, shell=True)\n",
@@ -50,6 +109,18 @@ DEFAULT_EVALUATION_CASES = [
         "name": "holdout-clean-environment-secret",
         "split": "holdout",
         "diff": "--- a/config.py\n+++ b/config.py\n@@ -1 +1 @@\n-old\n+api_key = os.environ[\"API_KEY\"]\n",
+        "expected": [],
+    },
+    {
+        "name": "holdout-security-unsafe-yaml-loader",
+        "split": "holdout",
+        "diff": "--- a/importer.py\n+++ b/importer.py\n@@ -1 +1 @@\n-old\n+document = yaml.load(request.body, Loader=yaml.Loader)\n",
+        "expected": [{"path": "importer.py", "line": 1, "min_severity": "high"}],
+    },
+    {
+        "name": "holdout-clean-random-token",
+        "split": "holdout",
+        "diff": "--- a/tokens.py\n+++ b/tokens.py\n@@ -1 +1 @@\n-old\n+reset_token = secrets.token_urlsafe(32)\n",
         "expected": [],
     },
 ]
@@ -203,8 +274,8 @@ class EvolutionEngine:
 
     def __init__(
         self, store, reviewer_factory: Optional[Callable[[str], object]] = None,
-        min_cases: int = 3, max_cases: int = 5, min_improvement: float = 0.01,
-        min_holdout_cases: int = 0, max_metric_regression: float = 0.0,
+        min_cases: int = 16, max_cases: int = 20, min_improvement: float = 0.01,
+        min_holdout_cases: int = 4, max_metric_regression: float = 0.0,
         seed_defaults: bool = True, candidate_generator=None,
     ):
         self.store = store
@@ -223,7 +294,7 @@ class EvolutionEngine:
         for case in DEFAULT_EVALUATION_CASES:
             self.store.save_evaluation_case(
                 case["name"], case.get("split", "validation"), case["diff"],
-                case["expected"], "builtin", True
+                case["expected"], "builtin:%s" % BUILTIN_EVALUATION_DATASET_VERSION, True
             )
 
     @staticmethod
@@ -289,6 +360,7 @@ class EvolutionEngine:
         cases = self.store.list_evaluation_cases("validation", True, self.max_cases)
         holdout = self.store.list_evaluation_cases("holdout", True, self.max_cases)
         return {
+            "builtin_dataset_version": BUILTIN_EVALUATION_DATASET_VERSION,
             "model_configured": self.reviewer_factory is not None,
             "validation_cases": len(cases),
             "holdout_cases": len(holdout),
@@ -387,11 +459,11 @@ class EvolutionEngine:
                 "holdout_non_regression": holdout_safe,
             })
             if no_errors and improved and validation_safe and holdout_safe:
-                decision = "activated" if activation_policy == "auto" else "shadow_ready"
+                decision = "activated" if activation_policy == "auto" else "candidate_ready"
                 reason = (
                     "candidate improved on validation and passed the non-regression holdout gate"
                     if decision == "activated" else
-                    "candidate passed replay gates and is awaiting shadow/canary approval"
+                    "candidate passed replay gates and is awaiting explicit activation"
                 )
             else:
                 decision = "rejected"
@@ -427,6 +499,7 @@ class EvolutionEngine:
                 "reason": reason,
                 "reproducibility": {
                     "evaluation_schema_version": 2,
+                    "builtin_dataset_version": BUILTIN_EVALUATION_DATASET_VERSION,
                     "candidate_prompt_sha256": self._sha256(prompt.strip()),
                     "baseline_prompt_sha256": self._sha256(baseline_prompt),
                     "validation_dataset_sha256": self._dataset_fingerprint(cases),
@@ -472,16 +545,18 @@ class EvolutionEngine:
                     "candidate_change": generated,
                     "failure_cases_used": len(cases), "run_id": None,
                 }
-            result = self._propose(skill_name, candidate, None, activation_policy="shadow")
+            result = self._propose(skill_name, candidate, None, activation_policy="manual")
             result["candidate_change"] = generated
             result["failure_cases_used"] = len(cases)
             result["rollback_point"] = (
                 {"skill_name": skill_name, "version": active["version"]}
                 if active else None
             )
+            evaluation_status = self.status()
             result["evaluation_data"] = {
-                "validation_sha256": self.status()["validation_dataset_fingerprint"],
-                "holdout_sha256": self.status()["holdout_dataset_fingerprint"],
+                "builtin_dataset_version": BUILTIN_EVALUATION_DATASET_VERSION,
+                "validation_sha256": evaluation_status["validation_dataset_fingerprint"],
+                "holdout_sha256": evaluation_status["holdout_dataset_fingerprint"],
             }
             if result.get("run_id"):
                 runs = self.store.list_evolution_runs(200)
@@ -551,12 +626,12 @@ class EvolutionEngine:
         candidate = base.rstrip() + (
             "\n\nLearned constraints:\n- " + "\n- ".join(additions)
         )
-        result = self.propose(skill_name, candidate)
+        result = self._propose(
+            skill_name, candidate, None, activation_policy="manual",
+        )
         result["failure_cases_used"] = len(cases)
         result["learned_categories"] = counts
         result["learned_rule_ids"] = learned_rule_ids
-        if result["decision"] == "activated":
-            self.store.resolve_failure_cases([case["id"] for case in cases])
         return result
 
     @staticmethod

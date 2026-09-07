@@ -17,3 +17,15 @@ tmp/
 venv/
 .idea/
 .vscode/
+
+# 本地面试材料：包含不适合发布到公开仓库的个人说明
+PRVolve面试口语速答版.md
+PRVolve面试问答手册-通俗代码版.md
+
+# 50 仓库 canary 的本地数据、裁决和构建脚本
+benchmarks/python_50_repo_canary_v1*.json*
+benchmarks/adjudications/python-50-repo-v1-*.json
+scripts/build_python_50_repo_canary.py
+scripts/curate_public_bugfix_candidates.py
+scripts/prepare_python_50_repo_checkouts.py
+scripts/summarize_python_50_repo_canary.py

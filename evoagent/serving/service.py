@@ -22,7 +22,7 @@ from ..serving.observability import AlertManager, Observability
 from ..store.postgres import create_store
 from ..serving.report import to_markdown
 from ..review.reviewers import (
-    OpenAICompatibleReviewer, ReliabilityRuleReviewer, SecurityRuleReviewer,
+    LocalRuleReviewer, OpenAICompatibleReviewer,
 )
 from ..tools.skills import AgentSkill, SkillRegistry
 from ..evolution.skills import AgentSkillReplayReviewer, SkillEvolutionEngine, validate_artifact
@@ -52,12 +52,8 @@ class ReviewService:
         self.observability = Observability(settings.otel_service_name, settings.otel_endpoint)
         self.registry = SkillRegistry(settings.skills_dir)
         self.registry.register(
-            "security-review", SecurityRuleReviewer(),
-            "1.0.0", "Security, injection and secret detection",
-        )
-        self.registry.register(
-            "reliability-review", ReliabilityRuleReviewer(),
-            "1.0.0", "Reliability and observability review",
+            "local-rule-review", LocalRuleReviewer(),
+            "1.0.0", "Deterministic security, correctness and reliability baseline",
         )
         if self.llm_config:
             active = self.store.get_active_skill_version("llm-review")
@@ -180,6 +176,7 @@ class ReviewService:
             self.memory,
             self.context_manager,
             self._active_agent_skills,
+            int(active_prompt["version"]) if active_prompt else None,
         )
 
     def _run_review(
@@ -187,6 +184,14 @@ class ReviewService:
         diff: str, tenant_id: str,
     ):
         return self.harness.run(task_id, repository, pull_request, diff, tenant_id)
+
+    @staticmethod
+    def _release_metadata() -> Dict[str, object]:
+        """Do not label tasks canary until lanes select different reviewers."""
+        return {
+            "lane": "stable", "shadow": False,
+            "execution_routing": "not_connected",
+        }
 
     def reload_skills(self) -> list:
         if self.llm_config:
@@ -246,10 +251,11 @@ class ReviewService:
     ) -> str:
         task_id = str(uuid.uuid4())
         encoded = diff.encode("utf-8")
-        assignment = self.releases.assignment(tenant_id, "llm-review", task_id)
+        assignment = self._release_metadata()
         self.store.create(task_id, repository, pull_request, {
             "source": source, "diff_bytes": len(encoded), "diff_sha256": hashlib.sha256(encoded).hexdigest(),
             "release_lane": assignment["lane"], "shadow": assignment["shadow"],
+            "release_execution_routing": assignment["execution_routing"],
             "mode": RunMode.AGENTIC.value,
             "repository_root": repository_root,
             "enabled_agents": enabled_agents or [],
@@ -263,10 +269,11 @@ class ReviewService:
         tenant_id: str, payload: Dict[str, Any],
     ) -> str:
         task_id = str(uuid.uuid4())
-        assignment = self.releases.assignment(tenant_id, "llm-review", task_id)
+        assignment = self._release_metadata()
         self.store.create(task_id, repository, pull_request, {
             "source": source, "diff_pending": True,
             "release_lane": assignment["lane"], "shadow": assignment["shadow"],
+            "release_execution_routing": assignment["execution_routing"],
             **payload,
             "mode": RunMode.AGENTIC.value,
         }, tenant_id)
@@ -298,15 +305,8 @@ class ReviewService:
                     task_id, repository, pull_request, diff, tenant_id
                 )
             metrics.inc("reviews_total")
-            lane = (self.store.get(task_id, tenant_id).get("input") or {}).get(
-                "release_lane", "stable"
-            )
-            self.releases.observe(tenant_id, "llm-review", False, lane)
             return {"task_id": task_id, "state": "SUCCESS", "report": report.to_dict()}
         except Exception:
-            task = self.store.get(task_id, tenant_id) or {}
-            lane = (task.get("input") or {}).get("release_lane", "stable")
-            self.releases.observe(tenant_id, "llm-review", True, lane)
             self.alerts.evaluate(tenant_id)
             raise
 
@@ -368,8 +368,6 @@ class ReviewService:
                     tenant_id,
                 )
             metrics.inc("reviews_total")
-            lane = (task.get("input") or {}).get("release_lane", "stable")
-            self.releases.observe(tenant_id, "llm-review", False, lane)
             if payload.get("github_issue_url") and self.settings.auto_post_review:
                 client = self.github_client_for_installation(payload.get("installation_id"))
                 client.upsert_comment(
@@ -378,8 +376,6 @@ class ReviewService:
                 )
         except Exception:
             metrics.inc("reviews_failed_total")
-            lane = (task.get("input") or {}).get("release_lane", "stable")
-            self.releases.observe(tenant_id, "llm-review", True, lane)
             self.alerts.evaluate(tenant_id)
             raise
 
@@ -488,7 +484,10 @@ class ReviewService:
         self.store.record_failure_case(task_id, category, {"finding": finding, "note": note[:2000]})
         self.memory.remember_feedback(
             task.get("tenant_id") or tenant_id or "default", task["repository"],
-            task_id, category, finding, note[:2000],
+            task_id, category, finding, note[:2000], {
+                "diff_sha256": str((task.get("input") or {}).get("diff_sha256", "")),
+                "source": str((task.get("input") or {}).get("source", "")),
+            },
         )
         metrics.inc("feedback_total")
         return {"recorded": True, "category": category}

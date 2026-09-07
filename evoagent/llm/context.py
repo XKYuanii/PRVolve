@@ -142,6 +142,7 @@ class ContextManager:
         with self._lock:
             self._memory[context_key] = {
                 "recalled": len(memories), "scopes": scopes,
+                "memory_ids": [str(item.get("id", "")) for item in memories[:20]],
                 "query_sha256": hashlib.sha256(query.encode("utf-8")).hexdigest(),
             }
 
@@ -171,6 +172,15 @@ class ContextManager:
                     "content": _clip(str(item.get("content", "")), 1200),
                     "importance": float(item.get("importance", 0.5)),
                     "recall_score": float(item.get("recall_score", 0.0)),
+                    "semantic_fallback": bool(item.get("semantic_fallback", False)),
+                    "lesson": {
+                        key: (item.get("metadata") or {}).get(key)
+                        for key in (
+                            "lesson_kind", "path_pattern", "symbol",
+                            "verified_by", "status",
+                        )
+                        if (item.get("metadata") or {}).get(key) not in (None, "")
+                    },
                     "created_at": str(item.get("created_at", "")),
                 }
                 for item in memories[:20]
@@ -226,14 +236,19 @@ class ContextManager:
             remaining = content_budget - used
             if remaining < 80 and selected_indices:
                 continue
-            excerpt = self._semantic_excerpt(hunk, max(80, min(remaining, 1800)), domains)
+            target_lines = locations.get(hunk.path.replace("\\", "/").lower(), set())
+            contains_exact_focus = bool(self._new_line_indexes(hunk, target_lines))
+            excerpt = self._semantic_excerpt(
+                hunk, max(80, min(remaining, 1800)), domains, target_lines,
+            )
             entry = {
                 "path": hunk.path, "header": hunk.header,
                 "risk_score": item["risk_score"], "risk_signals": item["risk_signals"],
                 "symbols": item["symbols"], "content": excerpt,
+                "contains_exact_focus": contains_exact_focus,
             }
             cost = estimate_tokens(entry)
-            if used + cost <= content_budget or not selected_indices:
+            if used + cost <= content_budget or not selected_indices or contains_exact_focus:
                 base["selected_hunks"].append(entry)
                 selected_indices.add(hunk.index)
                 used += cost
@@ -247,6 +262,10 @@ class ContextManager:
             "total_hunks": len(hunks), "selected_hunks": len(selected_indices),
             "omitted_hunks": max(0, len(hunks) - len(selected_indices)),
             "map_chunks": len(chunks), "algorithm": "risk-ranked-hunk-map-reduce",
+            "focus_hunks": sum(
+                bool(item.get("contains_exact_focus"))
+                for item in base["selected_hunks"]
+            ),
         }
         self._fit_diff_payload(base, budget)
         compressed_tokens = estimate_tokens(base)
@@ -557,38 +576,104 @@ class ContextManager:
             "risk_signal_counts": signals,
         }
 
-    def _semantic_excerpt(self, hunk: DiffHunk, budget: int, domains: set) -> str:
+    @staticmethod
+    def _new_line_indexes(hunk: DiffHunk, target_lines: set) -> set:
+        """Map new-file line numbers to indexes in a unified-diff hunk."""
+        if not target_lines:
+            return set()
+        indexes = set()
+        new_line = hunk.new_start
+        for index, line in enumerate(hunk.lines):
+            if line.startswith("\\"):
+                continue
+            if line.startswith("-") and not line.startswith("---"):
+                continue
+            if new_line in target_lines:
+                indexes.add(index)
+            new_line += 1
+        return indexes
+
+    @staticmethod
+    def _spread_indexes(indexes: Sequence[int]) -> List[int]:
+        """Return deterministic first/middle/last coverage before the remainder."""
+        values = list(dict.fromkeys(indexes))
+        if len(values) <= 3:
+            return values
+        anchors = [values[0], values[len(values) // 2], values[-1]]
+        return anchors + [value for value in values if value not in anchors]
+
+    def _semantic_excerpt(
+        self, hunk: DiffHunk, budget: int, domains: set,
+        target_lines: Optional[set] = None,
+    ) -> str:
         if estimate_tokens(hunk.content) <= budget:
             return hunk.content
-        important = set()
+        exact_focus = self._new_line_indexes(hunk, set(target_lines or ()))
+        focus_neighborhood = set(exact_focus)
+        for index in exact_focus:
+            focus_neighborhood.update(
+                range(max(0, index - 2), min(len(hunk.lines), index + 3))
+            )
+
+        risky = set()
         for index, line in enumerate(hunk.lines):
             lowered = line.lower()
             if line[:1] in {"+", "-"} or any(domain in lowered for domain in domains):
                 if any(needle in lowered for _name, _weight, needles in RISK_SIGNALS for needle in needles):
-                    important.update(range(max(0, index - 1), min(len(hunk.lines), index + 2)))
-        if not important:
-            important.update(index for index, line in enumerate(hunk.lines) if line[:1] in {"+", "-"})
-        selected = []
-        for index in sorted(important):
-            candidate = hunk.lines[index]
-            if estimate_tokens("\n".join((hunk.header, *selected, candidate))) > budget:
-                break
-            selected.append(candidate)
+                    risky.update(range(max(0, index - 1), min(len(hunk.lines), index + 2)))
+
+        changed = [
+            index for index, line in enumerate(hunk.lines)
+            if line[:1] in {"+", "-"} and not line.startswith(("+++", "---"))
+        ]
+        # Exact focus is mandatory.  A small spread of ordinary changed lines
+        # is selected before risk expansion so one keyword cannot replace the
+        # rest of an oversized change entirely.
+        priority = (
+            sorted(exact_focus)
+            + sorted(focus_neighborhood - exact_focus)
+            + self._spread_indexes(changed)[:3]
+            + sorted(risky)
+            + self._spread_indexes(changed)[3:]
+        )
+        priority = list(dict.fromkeys(priority))
+        selected_indexes = set()
+        for index in priority:
+            trial = sorted(selected_indexes | {index})
+            rendered = [hunk.lines[value] for value in trial]
+            if estimate_tokens("\n".join((hunk.header, *rendered))) <= budget:
+                selected_indexes.add(index)
+                continue
+            if index in exact_focus:
+                # Keep an exact-location marker even when a single generated
+                # line is itself larger than the remaining excerpt budget.
+                selected_indexes.add(index)
+
+        selected = [hunk.lines[index] for index in sorted(selected_indexes)]
         omitted = max(0, len(hunk.lines) - len(selected))
         return "\n".join((hunk.header, *selected, "... %d hunk line(s) semantically omitted ..." % omitted))
 
     @staticmethod
     def _fit_diff_payload(payload: Dict[str, Any], budget: int) -> None:
+        def shrinkable_entry():
+            return next((
+                item for item in reversed(payload["selected_hunks"])
+                if not item.get("contains_exact_focus")
+            ), None)
+
         summaries = payload["omitted_hunk_summaries"]
         while estimate_tokens(payload) > budget and summaries:
             summaries.pop()
         while estimate_tokens(payload) > budget and payload["selected_hunks"]:
-            entry = payload["selected_hunks"][-1]
+            entry = shrinkable_entry()
+            if entry is None:
+                break
             content = entry.get("content", "")
             if len(content) > 300:
                 entry["content"] = _clip(content, max(240, len(content) // 2))
             elif len(payload["selected_hunks"]) > 1:
-                removed = payload["selected_hunks"].pop()
+                payload["selected_hunks"].remove(entry)
+                removed = entry
                 summaries.insert(0, {
                     "path": removed["path"], "header": removed["header"],
                     "risk_score": removed["risk_score"],
@@ -602,16 +687,28 @@ class ContextManager:
             payload["aggregate"]["files"] = files[:12]
             payload["focus"]["files"] = list(payload["focus"].get("files") or [])[:12]
         while estimate_tokens(payload) > budget and payload["selected_hunks"]:
-            entry = payload["selected_hunks"][-1]
+            entry = shrinkable_entry()
+            if entry is None:
+                break
             if len(str(entry.get("content", ""))) > 120:
                 entry["content"] = _clip(str(entry["content"]), 120)
             elif len(payload["selected_hunks"]) > 1:
-                payload["selected_hunks"].pop()
+                payload["selected_hunks"].remove(entry)
             else:
                 break
         payload["compression"]["selected_hunks"] = len(payload["selected_hunks"])
         payload["compression"]["omitted_hunks"] = max(
             0, payload["compression"]["total_hunks"] - len(payload["selected_hunks"])
+        )
+        payload["compression"]["focus_locations_preserved"] = (
+            sum(
+                bool(item.get("contains_exact_focus"))
+                for item in payload["selected_hunks"]
+            ) == int(payload["compression"].get("focus_hunks", 0))
+        )
+        payload["compression"]["budget_overflow_due_to_focus"] = bool(
+            estimate_tokens(payload) > budget
+            and any(item.get("contains_exact_focus") for item in payload["selected_hunks"])
         )
 
     @staticmethod
@@ -717,6 +814,7 @@ class ContextManager:
             "finding_index", "rule_id", "severity", "title", "path", "line",
             "evidence", "confidence", "accepted", "objections", "status",
             "assignment_id", "run_id", "worker", "revision_round",
+            "used_lesson_ids",
         }
 
         def compact_item(item: Any, depth: int = 0) -> Any:

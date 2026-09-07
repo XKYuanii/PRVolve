@@ -694,60 +694,6 @@ class LocalRuleReviewer(Reviewer):
         )
 
 
-class DomainRuleReviewer(Reviewer):
-    """Independent deterministic specialist backed by an explicit rule policy."""
-
-    rule_ids = frozenset()
-    domains = ()
-
-    def review(self, diff: str, parsed: ParsedDiff) -> List[Finding]:
-        findings: List[Finding] = []
-        seen = set()
-        rules = [item for item in LocalRuleReviewer.RULES if item[0] in self.rule_ids]
-        for line in parsed.added_lines:
-            if line.path.endswith((".lock", ".min.js", ".map")):
-                continue
-            for rule_id, severity, pattern, title, explanation, fix, test in rules:
-                identity = (rule_id, line.path, line.line)
-                if (
-                    pattern.search(line.content)
-                    and not suppress_contextual_false_positive(
-                        rule_id, line.content, line.path,
-                    )
-                    and identity not in seen
-                ):
-                    seen.add(identity)
-                    findings.append(Finding(
-                        rule_id=rule_id, severity=severity, title=title,
-                        explanation=explanation, path=line.path, line=line.line,
-                        evidence=line.content.strip()[:240], fix=fix, test=test,
-                        confidence=0.9,
-                        evidence_refs=[{
-                            "evidence_id": "local-rule:%s" % hashlib.sha256(
-                                (rule_id + line.path + str(line.line) + line.content).encode("utf-8")
-                            ).hexdigest()[:16],
-                            "tool": "local-rule-scanner", "rule_id": rule_id,
-                            "path": line.path, "line": line.line,
-                        }],
-                        source="local-rule-scanner",
-                    ))
-        return findings
-
-class SecurityRuleReviewer(DomainRuleReviewer):
-    name = "security-agent"
-    domains = ("security", "authorization")
-    rule_ids = frozenset({
-        "SEC-EVAL", "SEC-SUBPROCESS-SHELL", "SEC-HARDCODED-SECRET",
-        "SEC-SQL-CONCAT", "SEC-JWT-SIGNATURE-DISABLED",
-    })
-
-
-class ReliabilityRuleReviewer(DomainRuleReviewer):
-    name = "reliability-agent"
-    domains = ("reliability", "correctness", "regression")
-    rule_ids = frozenset({"REL-EMPTY-EXCEPT"})
-
-
 class OpenAICompatibleReviewer(Reviewer):
     name = "openai-compatible"
     domains = ("security", "reliability", "correctness", "regression")

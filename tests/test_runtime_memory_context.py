@@ -127,7 +127,7 @@ class RuntimeMemoryTests(unittest.TestCase):
             "tenant-a", "org/repo", ("working",), 10
         ))
 
-    def test_tool_observation_is_written_and_visible_to_next_agent_step(self):
+    def test_tool_observation_is_not_duplicated_as_working_memory(self):
         memory = MemoryManager(self.store, recall_limit=8)
         seen = []
 
@@ -138,7 +138,10 @@ class RuntimeMemoryTests(unittest.TestCase):
             def complete_json(_self, _role, _prompt, user, ledger=None, max_tokens=None):
                 managed = json.loads(user)
                 task = json.loads(managed["task"])
-                seen.append(task.get("working_memory"))
+                seen.append({
+                    "working_memory": task.get("working_memory"),
+                    "observations": managed.get("observations") or [],
+                })
                 if ledger:
                     ledger.record_model("security", "fake", "fake", {
                         "prompt_tokens": 10, "completion_tokens": 3,
@@ -170,9 +173,12 @@ class RuntimeMemoryTests(unittest.TestCase):
 
         role.run(json.dumps({"phase": "worker"}), registry, ExecutionLedger("agentic"))
 
-        self.assertIsNone(seen[0])
-        self.assertEqual("tool_observation", seen[1]["items"][0]["kind"])
-        self.assertIn("lookup:auth", seen[1]["items"][0]["content"])
+        self.assertIsNone(seen[0]["working_memory"])
+        self.assertIsNone(seen[1]["working_memory"])
+        self.assertIn("lookup:auth", json.dumps(seen[1]["observations"]))
+        self.assertEqual(1, len(memory.recall_working(
+            "tenant-a", "org/repo", "task", agent="security",
+        )))
 
     def test_preflight_observations_do_not_satisfy_the_verify_first_rule(self):
         """A role must run a tool of its own before it may conclude."""
@@ -211,7 +217,7 @@ class RuntimeMemoryTests(unittest.TestCase):
         self.assertEqual(2, len(seen))
         self.assertIn("protocol-requirement", seen[1])
 
-    def test_task_consolidation_releases_working_memory_but_keeps_episode(self):
+    def test_task_completion_releases_working_memory_without_creating_episode(self):
         memory = MemoryManager(self.store)
         memory.remember_observation("tenant-a", "org/repo", "task", "security", {
             "step": 1, "tool": "symbol", "ok": True,
@@ -221,8 +227,59 @@ class RuntimeMemoryTests(unittest.TestCase):
         memory.consolidate_task("tenant-a", "org/repo", "task", {"accepted_findings": []})
 
         self.assertEqual([], memory.recall_working("tenant-a", "org/repo", "task"))
-        archived = memory.recall("tenant-a", "org/repo", "completed task")
-        self.assertEqual("task_summary", archived[0]["kind"])
+        self.assertEqual([], memory.recall("tenant-a", "org/repo", "completed task"))
+
+    def test_repository_lessons_rank_code_matches_and_bound_semantic_fallback(self):
+        memory = MemoryManager(self.store, recall_limit=3)
+        memory.remember_feedback(
+            "tenant-a", "org/repo", "task-1", "missed_issue",
+            {"rule_id": "SEC-AUTH", "path": "src/auth.py", "symbol": "authorize"},
+            "Authorization calls require the repository permission wrapper.",
+        )
+        memory.remember_feedback(
+            "tenant-a", "org/repo", "task-2", "false_positive", None,
+            "Generated DTO constructors validate required fields.",
+        )
+        memory.remember_feedback(
+            "tenant-a", "org/repo", "task-3", "bad_fix", None,
+            "Do not replace bounded retries with an unbounded loop.",
+        )
+
+        relevant = memory.recall(
+            "tenant-a", "org/repo", "src/auth.py authorize permission",
+        )
+        unrelated = memory.recall(
+            "tenant-a", "org/repo", "src/cache.py eviction",
+        )
+
+        self.assertEqual("src/auth.py", relevant[0]["metadata"]["path_pattern"])
+        self.assertLessEqual(
+            len([item for item in unrelated if item["semantic_fallback"]]), 1,
+        )
+        self.assertFalse(any(
+            item["metadata"].get("path_pattern") == "src/auth.py"
+            for item in unrelated
+        ))
+
+    def test_repeated_confirmation_reuses_repository_lesson_identity(self):
+        memory = MemoryManager(self.store)
+        finding = {"rule_id": "SEC-AUTH", "path": "src/auth.py"}
+
+        first = memory.remember_feedback(
+            "tenant-a", "org/repo", "task-1", "missed_issue", finding,
+            "Authorization calls require the permission wrapper.",
+            {"diff_sha256": "first"},
+        )
+        second = memory.remember_feedback(
+            "tenant-a", "org/repo", "task-2", "missed_issue", finding,
+            "Authorization calls require the permission wrapper.",
+            {"diff_sha256": "second"},
+        )
+
+        self.assertEqual(first["id"], second["id"])
+        self.assertEqual(1, len(self.store.list_agent_memories(
+            "tenant-a", "org/repo", ("semantic",), 10,
+        )))
 
     def test_working_memory_is_isolated_by_agent_role(self):
         memory = MemoryManager(self.store)
@@ -245,6 +302,34 @@ class RuntimeMemoryTests(unittest.TestCase):
         self.assertEqual(1, len(security))
         self.assertIn("security:auth", security[0]["content"])
         self.assertEqual([], critic)
+
+    def test_identical_working_observations_are_isolated_by_task(self):
+        memory = MemoryManager(self.store)
+        observation = {
+            "step": 1, "tool": "lookup", "ok": True,
+            "result": {"evidence_id": "lookup:auth", "output": "same fact"},
+        }
+
+        first = memory.remember_observation(
+            "tenant-a", "org/repo", "task-a", "security", observation,
+        )
+        second = memory.remember_observation(
+            "tenant-a", "org/repo", "task-b", "security", observation,
+        )
+
+        self.assertNotEqual(first["id"], second["id"])
+        self.assertEqual(
+            [second["id"]],
+            [item["id"] for item in memory.recall_working(
+                "tenant-a", "org/repo", "task-b", agent="security",
+            )],
+        )
+        self.assertEqual(
+            [first["id"]],
+            [item["id"] for item in memory.recall_working(
+                "tenant-a", "org/repo", "task-a", agent="security",
+            )],
+        )
 
 
 if __name__ == "__main__":

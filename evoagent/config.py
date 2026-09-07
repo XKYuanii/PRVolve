@@ -80,7 +80,7 @@ class Settings:
     redis_url: str = ""
     async_workers: int = 2
     memory_enabled: bool = True
-    memory_recall_limit: int = 6
+    memory_recall_limit: int = 3
     memory_working_ttl_seconds: int = 86400
     skills_dir: str = "skills"
     github_app_id: str = ""
@@ -92,11 +92,12 @@ class Settings:
     openrouter_api_key: str = ""
     openrouter_site_url: str = ""
     openrouter_app_name: str = "EvoAgent"
-    eval_max_cases: int = 5
-    eval_min_cases: int = 3
+    eval_max_cases: int = 20
+    eval_min_cases: int = 16
     eval_min_improvement: float = 0.01
-    eval_min_holdout_cases: int = 2
+    eval_min_holdout_cases: int = 4
     eval_max_metric_regression: float = 0.0
+    experimental_skill_evolution_enabled: bool = False
     auth_required: bool = False
     auth_secret: str = ""
     bootstrap_admin_username: str = ""
@@ -242,7 +243,7 @@ class Settings:
             redis_url=os.getenv("EVOAGENT_REDIS_URL", ""),
             async_workers=_int("EVOAGENT_ASYNC_WORKERS", 2),
             memory_enabled=_bool("EVOAGENT_MEMORY_ENABLED", True),
-            memory_recall_limit=_int("EVOAGENT_MEMORY_RECALL_LIMIT", 6),
+            memory_recall_limit=_int("EVOAGENT_MEMORY_RECALL_LIMIT", 3),
             memory_working_ttl_seconds=_int(
                 "EVOAGENT_MEMORY_WORKING_TTL_SECONDS", 86400
             ),
@@ -256,12 +257,15 @@ class Settings:
             openrouter_api_key=os.getenv("EVOAGENT_OPENROUTER_API_KEY", ""),
             openrouter_site_url=os.getenv("EVOAGENT_OPENROUTER_SITE_URL", ""),
             openrouter_app_name=os.getenv("EVOAGENT_OPENROUTER_APP_NAME", "EvoAgent"),
-            eval_max_cases=_int("EVOAGENT_EVAL_MAX_CASES", 5),
-            eval_min_cases=_int("EVOAGENT_EVAL_MIN_CASES", 3),
+            eval_max_cases=_int("EVOAGENT_EVAL_MAX_CASES", 20),
+            eval_min_cases=_int("EVOAGENT_EVAL_MIN_CASES", 16),
             eval_min_improvement=float(os.getenv("EVOAGENT_EVAL_MIN_IMPROVEMENT", "0.01")),
-            eval_min_holdout_cases=_non_negative_int("EVOAGENT_EVAL_MIN_HOLDOUT_CASES", 2),
+            eval_min_holdout_cases=_non_negative_int("EVOAGENT_EVAL_MIN_HOLDOUT_CASES", 4),
             eval_max_metric_regression=float(
                 os.getenv("EVOAGENT_EVAL_MAX_METRIC_REGRESSION", "0")
+            ),
+            experimental_skill_evolution_enabled=_bool(
+                "EVOAGENT_EXPERIMENTAL_SKILL_EVOLUTION_ENABLED", False
             ),
             auth_required=_bool("EVOAGENT_AUTH_REQUIRED", False),
             auth_secret=os.getenv("EVOAGENT_AUTH_SECRET", ""),
