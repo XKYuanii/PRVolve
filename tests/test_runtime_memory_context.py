@@ -112,6 +112,26 @@ class RuntimeMemoryTests(unittest.TestCase):
         self.assertIn("SEC-EVAL", recalled[0]["content"])
         self.assertEqual([], memory.recall("tenant-a", "org/other", "SEC-EVAL"))
 
+    def test_default_recall_ignores_legacy_episodic_scope(self):
+        memory = MemoryManager(self.store)
+        memory.remember(
+            "tenant-a", "org/repo", "episodic", "finding_approved",
+            "Legacy SEC-EVAL review episode.", importance=0.9,
+        )
+        memory.remember(
+            "tenant-a", "org/repo", "semantic", "repository_lesson",
+            "Verified SEC-EVAL repository lesson.",
+            {"verified_by": "human", "status": "active"}, importance=0.9,
+        )
+
+        default = memory.recall("tenant-a", "org/repo", "SEC-EVAL")
+        explicit_legacy = memory.recall(
+            "tenant-a", "org/repo", "SEC-EVAL", scopes=("episodic",),
+        )
+
+        self.assertEqual(["semantic"], [item["scope"] for item in default])
+        self.assertEqual(["episodic"], [item["scope"] for item in explicit_legacy])
+
     def test_memory_recall_purges_expired_records(self):
         self.store.save_agent_memory({
             "id": "expired-memory", "tenant_id": "tenant-a",

@@ -614,6 +614,27 @@ class LeadWorkerCollaborationTests(unittest.TestCase):
         self.assertEqual("failed", result["status"])
         self.assertEqual(1, result["assignment_attempt"])
 
+    def test_completed_assignment_crossing_deadline_keeps_truthful_status(self):
+        completed = {
+            "status": "completed", "error": "", "error_type": "",
+            "retryable": False, "findings": [{"rule_id": "SEC-EVAL"}],
+        }
+
+        result = AgenticReviewer._apply_assignment_deadline(completed, True)
+
+        self.assertEqual("completed", result["status"])
+        self.assertEqual("", result["error"])
+        self.assertTrue(result["deadline_exceeded_after_completion"])
+        self.assertEqual([{"rule_id": "SEC-EVAL"}], result["findings"])
+
+        failed = {
+            "status": "failed", "error": "provider unavailable",
+            "error_type": "transient_worker_failure", "retryable": True,
+        }
+        failed_result = AgenticReviewer._apply_assignment_deadline(failed, True)
+        self.assertEqual("timed_out", failed_result["status"])
+        self.assertFalse(failed_result["deadline_exceeded_after_completion"])
+
     def test_injected_local_scanner_is_not_run_twice(self):
         reviewer = AgenticReviewer(
             self.store, HierarchicalClient(), scanners=[LocalRuleReviewer()],

@@ -14,7 +14,11 @@ from ..store.sqlite import utc_now
 
 
 TOKEN = re.compile(r"[A-Za-z0-9_./:-]{2,}")
-VALID_SCOPES = {"working", "episodic", "semantic", "procedural"}
+PRODUCT_SCOPES = {"working", "semantic"}
+LEGACY_SCOPES = {"episodic", "procedural"}
+# Legacy values remain readable so old databases and explicit integrations do
+# not break. Current product flows write Working Evidence and Repository Lessons.
+VALID_SCOPES = PRODUCT_SCOPES | LEGACY_SCOPES
 
 
 def _tokens(value: str) -> set:
@@ -85,7 +89,7 @@ class MemoryManager:
 
     def recall(
         self, tenant_id: str, repository: str, query: str,
-        scopes: Sequence[str] = ("semantic", "episodic"),
+        scopes: Sequence[str] = ("semantic",),
         limit: Optional[int] = None, task_id: str = "",
     ) -> List[Dict[str, Any]]:
         if not self.enabled:
@@ -213,7 +217,7 @@ class MemoryManager:
         self, tenant_id: str, repository: str, task_id: str,
         finding: Dict[str, Any], approved: bool, reasons: Iterable[str] = (),
     ) -> Optional[Dict[str, Any]]:
-        """Compatibility hook; completed reviews no longer call this automatically."""
+        """Legacy compatibility writer; production reviews do not call it."""
         decision = "approved" if approved else "rejected"
         content = (
             "%s finding %s at %s:%s. Evidence: %s. Explanation: %s. "
@@ -271,7 +275,7 @@ class MemoryManager:
         self, tenant_id: str, repository: str, task_id: str,
         summary: Dict[str, Any],
     ) -> Optional[Dict[str, Any]]:
-        """Release transient task evidence without promoting it to long-term memory."""
+        """Legacy no-op that only releases transient task evidence."""
         if not self.enabled or not task_id:
             return None
         self.forget_working(task_id)

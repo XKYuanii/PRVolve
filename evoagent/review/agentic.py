@@ -478,7 +478,8 @@ class AgenticReviewer(Reviewer):
         try:
             recalled = (
                 self.memory_manager.recall(
-                    session.tenant_id, session.repository, memory_query
+                    session.tenant_id, session.repository, memory_query,
+                    scopes=("semantic",),
                 )
                 if self.memory_manager is not None else []
             )
@@ -1144,13 +1145,9 @@ class AgenticReviewer(Reviewer):
                     result["assignment_attempt"] = attempt
                     result["attempt_duration_ms"] = elapsed_ms
                     result["deadline_seconds"] = float(self.default_time_budget)
-                    if time.monotonic() >= deadline:
-                        result.update({
-                            "status": "timed_out",
-                            "error_type": "assignment_deadline",
-                            "retryable": False,
-                            "error": "assignment deadline exceeded",
-                        })
+                    self._apply_assignment_deadline(
+                        result, time.monotonic() >= deadline,
+                    )
                     last_result = result
                     if result.get("status") == "completed":
                         return result
@@ -1170,6 +1167,7 @@ class AgenticReviewer(Reviewer):
                     "revision_round": revision_round, "status": "timed_out",
                     "assignment_attempt": 0, "attempt_duration_ms": 0,
                     "deadline_seconds": float(self.default_time_budget),
+                    "deadline_exceeded_after_completion": False,
                     "error_type": "assignment_deadline", "retryable": False,
                     "error": "assignment deadline exceeded before the first attempt",
                     "findings": [], "evidence_inventory": [],
@@ -1311,6 +1309,22 @@ class AgenticReviewer(Reviewer):
         if isinstance(exc, (RuntimeError, ConnectionError, OSError)):
             return "transient_worker_failure", True, "failed"
         return type(exc).__name__.lower(), False, "failed"
+
+    @staticmethod
+    def _apply_assignment_deadline(result, deadline_exceeded):
+        """Preserve a completed result while auditing a boundary overrun."""
+        completed_late = bool(
+            deadline_exceeded and result.get("status") == "completed"
+        )
+        result["deadline_exceeded_after_completion"] = completed_late
+        if deadline_exceeded and not completed_late:
+            result.update({
+                "status": "timed_out",
+                "error_type": "assignment_deadline",
+                "retryable": False,
+                "error": "assignment deadline exceeded",
+            })
+        return result
 
     @staticmethod
     def _recalled_lesson_ids(memory_context):
